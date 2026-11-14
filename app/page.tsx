@@ -3760,7 +3760,7 @@ export default function Home() {
                   </h2>
                 </div>
                 <p style={{ margin: '0.4rem 0 0', color: 'var(--text-muted)', fontSize: '0.88rem', lineHeight: 1.4 }}>
-                  כתוב ל-Gemini כל פקודה או תיאור של מניות שאתה מחפש, והוא יבדוק תחילה ב-<strong>Google Finance (מקור ראשי)</strong> ויציג לך בדיוק 3 מניות מתאימות עם יעדי האנליסטים.
+                  כתוב ל-Gemini כל פקודה או תיאור של מניות שאתה מחפש, והוא יציג לך בדיוק 3 מניות מתאימות עם תחזיות ויעדי אנליסטים מ-<strong>Google Finance בלבד</strong>.
                 </p>
               </div>
 
@@ -4063,7 +4063,7 @@ export default function Home() {
                         <span>סיכום הבחירה של Gemini:</span>
                       </div>
                       <span style={{ fontSize: '0.74rem', padding: '0.15rem 0.55rem', borderRadius: '6px', background: 'rgba(59, 130, 246, 0.2)', color: '#93c5fd', fontWeight: 600 }}>
-                        מקור ראשי: Google Finance
+                        תחזיות: Google Finance בלבד
                       </span>
                     </div>
                     <div style={{ fontSize: '0.95rem', color: 'var(--text-main)', lineHeight: 1.55 }}>
@@ -4316,7 +4316,7 @@ export default function Home() {
                                 textAlign: 'center',
                               }}
                             >
-                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>יעד אנליסטים (12 חודשים)</div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>יעד אנליסטים (Google Finance בלבד)</div>
                               <div style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--profit-color)', direction: 'ltr' }}>
                                 ${st.targetPrice} (+{st.upsidePercent}%)
                               </div>
@@ -4375,7 +4375,7 @@ export default function Home() {
                         {/* Financial Metrics Chips */}
                         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.85rem' }}>
                           <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.55rem', borderRadius: '6px', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.35)', color: '#93c5fd' }}>
-                            מקור ראשי: <strong style={{ color: '#60a5fa' }}>Google Finance</strong>
+                            תחזית: <strong style={{ color: '#60a5fa' }}>Google Finance בלבד</strong>
                           </span>
                           {st.peRatio && (
                             <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.55rem', borderRadius: '6px', background: 'rgba(255, 255, 255, 0.04)', border: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>

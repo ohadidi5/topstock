@@ -171,11 +171,10 @@ User query: "${query}"
 ${filterLines.length > 0 ? `ACTIVE CLIENT FILTERS & MANDATORY REQUIREMENTS:\n${filterLines.join('\n')}\n` : ''}
 ${portfolioSummary}
 
-CRITICAL MANDATE - GOOGLE FINANCE IS THE PRIMARY SOURCE:
-- You MUST check and prioritize Google Finance (https://www.google.com/finance) as your FIRST and PRIMARY reference for:
-  1. Real-time market prices, P/E ratios, market caps, and 52-week ranges.
-  2. Official 1-year analyst price target estimates & consensus recommendations (FactSet / S&P consensus on Google Finance).
-- Cross-check and verify with Wall Street institutional consensus and latest quarterly earnings.
+CRITICAL MANDATE - EXCLUSIVE FORECAST SOURCE: GOOGLE FINANCE ONLY:
+- You MUST take all 1-year analyst price targets ("targetPrice"), upside percentages ("upsidePercent"), and consensus ratings ("rating") EXCLUSIVELY and ONLY from Google Finance (https://www.google.com/finance - official FactSet / S&P consensus on Google Finance).
+- DO NOT use or blend price target forecasts from any other third-party websites or external platforms. Every forecast target must originate strictly from Google Finance.
+- Real-time market price, P/E ratio, market cap, and 52-week high distance must also be taken directly from Google Finance.
 - Select EXACTLY 3 real, liquid, publicly traded stocks that best match the client's criteria and filters.
 
 CRITICAL FOR "portfolioFitScore" & "portfolioFitReason":
@@ -186,7 +185,8 @@ Return ONLY a valid JSON object (no markdown backticks, no codeblocks) with this
 {
   "query": "${query}",
   "primarySource": "Google Finance",
-  "sourcesUsed": ["Google Finance", "Wall Street Consensus"],
+  "forecastSource": "Google Finance בלבד",
+  "sourcesUsed": ["Google Finance (מקור בלעדי לתחזיות ויעדי אנליסטים)"],
   "stocks": [
     {
       "symbol": "string (uppercase ticker, e.g. MSFT, AAPL, AMZN)",
@@ -339,6 +339,7 @@ CRITICAL: Return EXACTLY 3 stocks in the stocks array. All Hebrew text must be n
               catalyst: st.catalyst || '',
               googleFinanceUrl: `https://www.google.com/finance/quote/${sym}`,
               primarySource: 'Google Finance',
+              forecastSource: 'Google Finance בלבד',
             };
           })
         );
@@ -347,7 +348,8 @@ CRITICAL: Return EXACTLY 3 stocks in the stocks array. All Hebrew text must be n
           query,
           filters: filters || {},
           primarySource: 'Google Finance',
-          sourcesUsed: ['Google Finance (מקור ראשי)', 'Wall Street Consensus', 'Investing.com'],
+          forecastSource: 'Google Finance בלבד',
+          sourcesUsed: ['Google Finance (מקור בלעדי לתחזיות ויעדי אנליסטים)'],
           stocks: enrichedStocks,
           summaryHe: parsed.summaryHe || `נמצאו 3 מניות מובילות העונות בדיוק על הבקשה: "${query}".`,
           foundAt: new Date().toISOString(),
