@@ -32,6 +32,69 @@ export async function POST(request: Request) {
   }
 }
 
+function normalizeHebrewNumbers(text: string): string {
+  return text
+    .replace(/\bעשרים וחמישה?\b/g, '25')
+    .replace(/\bשלושים וחמישה?\b/g, '35')
+    .replace(/\bארבעים וחמישה?\b/g, '45')
+    .replace(/\bעשרה?\b/g, '10')
+    .replace(/\bעשרים\b/g, '20')
+    .replace(/\bשלושים\b/g, '30')
+    .replace(/\bארבעים\b/g, '40')
+    .replace(/\bחמישים\b/g, '50');
+}
+
+function extractNumericConstraints(query: string) {
+  const normalized = normalizeHebrewNumbers(query);
+  let minUpside: number | null = null;
+  let minDividend: number | null = null;
+
+  // 1. Dividend check
+  const divRegexes = [
+    /דיבידנד\s*(?:של)?\s*(?:לפחות|מעל|מינימום)?\s*(\d+(?:\.\d+)?)\s*(?:%|אחוז)/i,
+    /(?:לפחות|מעל|מינימום)\s*(\d+(?:\.\d+)?)\s*(?:%|אחוז)\s*דיבידנד/i,
+    /(\d+(?:\.\d+)?)\s*(?:%|אחוז)\s*דיבידנד/i,
+    /תשואת\s*דיבידנד\s*(?:של)?\s*(?:לפחות|מעל|מינימום)?\s*(\d+(?:\.\d+)?)\s*(?:%|אחוז)/i,
+  ];
+  for (const r of divRegexes) {
+    const m = normalized.match(r);
+    if (m && m[1]) {
+      minDividend = parseFloat(m[1]);
+      break;
+    }
+  }
+
+  // 2. Upside / Return / Yield check (תשואה / אפסייד / פוטנציאל / רווח / יעד)
+  const upsideRegexes = [
+    // "לפחות 30 אחוז תשואה", "מעל 25% אפסייד", "מינימום 30 אחוז"
+    /(?:לפחות|מעל|מינימום|של מעל)\s*(\d+(?:\.\d+)?)\s*(?:%|אחוז|אחוזים)(?:\s*(?:תשואה|אפסייד|רווח|עלייה|פוטנציאל|יעד))?/i,
+    // "30% תשואה לפחות", "30 אחוז לפחות", "25% ומעלה"
+    /(\d+(?:\.\d+)?)\s*(?:%|אחוז|אחוזים)\s*(?:תשואה|אפסייד|רווח|עלייה|פוטנציאל|יעד)?\s*(?:לפחות|ומעלה|מינימום)/i,
+    // "תשואה של לפחות 30%", "תשואה מעל 25 אחוז", "תשואה של 30%"
+    /(?:תשואה|אפסייד|פוטנציאל|עלייה|יעד)\s*(?:צפויה|עתידית|של)?\s*(?:לפחות|מעל|מינימום)?\s*(\d+(?:\.\d+)?)\s*(?:%|אחוז|אחוזים)/i,
+    // "תשואה 30%", "אפסייד 25%"
+    /(?:תשואה|אפסייד)\s*(\d+(?:\.\d+)?)\s*(?:%|אחוז|אחוזים)/i,
+    // "רווח של 30%"
+    /רווח\s*(?:של)?\s*(\d+(?:\.\d+)?)\s*(?:%|אחוז|אחוזים)/i,
+  ];
+
+  for (const r of upsideRegexes) {
+    const m = normalized.match(r);
+    if (m && m[1]) {
+      const val = parseFloat(m[1]);
+      const fullMatch = m[0];
+      const matchIndex = normalized.indexOf(fullMatch);
+      const windowAround = normalized.slice(Math.max(0, matchIndex - 12), Math.min(normalized.length, matchIndex + fullMatch.length + 12));
+      if (!windowAround.includes('דיבידנד') || val > 12) {
+        minUpside = val;
+        break;
+      }
+    }
+  }
+
+  return { minUpside, minDividend };
+}
+
 async function handleAiStockFinder(
   query: string,
   filters?: { risk?: string; budget?: string; dividend?: string; beat?: string },
@@ -41,12 +104,20 @@ async function handleAiStockFinder(
     return NextResponse.json({ error: 'נא להזין הנחיה או תיאור של המניות שברצונך לאתר' }, { status: 400 });
   }
 
+  const { minUpside, minDividend } = extractNumericConstraints(query);
+
   // Create composite cache key including query, active filters, and portfolio symbols
   const portKey = userPortfolio.map(s => s.symbol).sort().join(',');
   const cacheKey = `${query.toLowerCase().trim()}_${filters?.risk || 'all'}_${filters?.budget || 'all'}_${filters?.dividend || 'all'}_${filters?.beat || 'all'}_${portKey}`;
   const cached = finderCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
-    return NextResponse.json({ ...cached.data, cached: true });
+    // If minUpside is requested, make sure cached results strictly satisfy it
+    const cacheValid = !minUpside || (Array.isArray(cached.data?.stocks) && cached.data.stocks.every((s: any) => (s.upsidePercent || 0) >= minUpside));
+    if (cacheValid) {
+      return NextResponse.json({ ...cached.data, cached: true });
+    } else {
+      finderCache.delete(cacheKey);
+    }
   }
 
   // Build filter directives
@@ -75,6 +146,20 @@ async function handleAiStockFinder(
     filterLines.push('- EARNINGS REQUIREMENT: Company MUST have BEATEN both EPS and revenue estimates in their latest quarterly report.');
   }
 
+  if (minUpside && minUpside > 0) {
+    filterLines.push(
+      `*** CRITICAL STRICT MANDATORY REQUIREMENT - MINIMUM ANALYST UPSIDE TARGET ***:\n` +
+      `- The client explicitly and strictly demands stocks with AT LEAST ${minUpside}% upside return (תשואה / אפסייד צפוי של לפחות ${minUpside}%).\n` +
+      `- FOR EVERY SINGLE ONE OF THE 3 STOCKS: upsidePercent MUST be >= ${minUpside} (e.g. ${minUpside}%, ${Math.round(minUpside * 1.15)}%, ${Math.round(minUpside * 1.35)}%).\n` +
+      `- 12-month analyst consensus target price on Google Finance MUST be at least currentPrice * ${(1 + minUpside / 100).toFixed(2)}.\n` +
+      `- NEVER choose any stock with lower upside (such as 5%, 7%, 10%, 15% or 20%)! If a stock does not have at least ${minUpside}% upside, DISQUALIFY IT immediately and find high-conviction growth, recovery, turnaround, or undervalued companies that analysts forecast will rise by at least ${minUpside}%.`
+    );
+  }
+
+  if (minDividend && minDividend > 0) {
+    filterLines.push(`- MINIMUM DIVIDEND YIELD: Company dividend yield MUST be at least ${minDividend}%.`);
+  }
+
   const portfolioSummary = userPortfolio.length > 0
     ? `CLIENT CURRENT PORTFOLIO HOLDINGS: [${userPortfolio.map(s => s.symbol).slice(0, 15).join(', ')}]`
     : `CLIENT CURRENT PORTFOLIO: (Empty / new portfolio - starting from scratch)`;
@@ -83,7 +168,7 @@ async function handleAiStockFinder(
 A client is asking you to locate stocks according to their specific custom investment criteria in Hebrew:
 User query: "${query}"
 
-${filterLines.length > 0 ? `ACTIVE CLIENT FILTERS:\n${filterLines.join('\n')}\n` : ''}
+${filterLines.length > 0 ? `ACTIVE CLIENT FILTERS & MANDATORY REQUIREMENTS:\n${filterLines.join('\n')}\n` : ''}
 ${portfolioSummary}
 
 CRITICAL MANDATE - GOOGLE FINANCE IS THE PRIMARY SOURCE:
@@ -108,8 +193,8 @@ Return ONLY a valid JSON object (no markdown backticks, no codeblocks) with this
       "name": "string (official company name)",
       "sector": "string in Hebrew (e.g. טכנולוגיה ותוכנה, שבבים, בריאות ורפואה, אנרגיה, צריכה בסיסית)",
       "currentPrice": number (approximate current price in USD),
-      "targetPrice": number (average 12-month analyst consensus target in USD from Google Finance),
-      "upsidePercent": number (percentage upside target, e.g. 18.5),
+      "targetPrice": number (average 12-month analyst consensus target in USD from Google Finance${minUpside ? `, MUST be at least currentPrice * ${(1 + minUpside / 100).toFixed(2)}` : ''}),
+      "upsidePercent": number (${minUpside ? `MUST be >= ${minUpside}, e.g. ${minUpside + 5}` : 'percentage upside target, e.g. 18.5'}),
       "rating": "Strong Buy" | "Buy" | "Moderate Buy",
       "peRatio": number (current trailing or forward P/E ratio, e.g. 24.2),
       "dividendYield": number (annual dividend yield percentage, e.g. 2.4, or 0 if none),
@@ -166,6 +251,17 @@ CRITICAL: Return EXACTLY 3 stocks in the stocks array. All Hebrew text must be n
       }
 
       if (parsed && Array.isArray(parsed.stocks) && parsed.stocks.length > 0) {
+        if (minUpside && minUpside > 0) {
+          const highUpsideCount = parsed.stocks.filter((st: any) => {
+            const up = typeof st.upsidePercent === 'number' ? st.upsidePercent : 0;
+            return up >= minUpside;
+          }).length;
+          if (highUpsideCount === 0 && model !== MODELS[MODELS.length - 1]) {
+            console.warn(`Model ${model} returned stocks below requested minUpside (${minUpside}%), retrying with next model...`);
+            continue;
+          }
+        }
+
         // Enrich the stocks with real-time Finnhub quote data if possible
         const enrichedStocks = await Promise.all(
           parsed.stocks.slice(0, 3).map(async (st: any) => {
@@ -191,14 +287,35 @@ CRITICAL: Return EXACTLY 3 stocks in the stocks array. All Hebrew text must be n
             } catch {}
 
             // Calculate realistic target & upside aligned with live price
-            let targetPrice = typeof st.targetPrice === 'number' ? st.targetPrice : (livePrice ? Math.round(livePrice * 1.18 * 10) / 10 : 0);
-            if (livePrice && targetPrice && targetPrice < livePrice * 0.8) {
-              targetPrice = Math.round(livePrice * 1.18 * 10) / 10;
+            const geminiUpside = typeof st.upsidePercent === 'number' ? st.upsidePercent : (minUpside || 15);
+            let targetPrice = typeof st.targetPrice === 'number' && st.targetPrice > 0 ? st.targetPrice : 0;
+
+            if (livePrice && livePrice > 0) {
+              if (!targetPrice || targetPrice <= livePrice) {
+                const effectiveUpside = Math.max(geminiUpside, minUpside || 0);
+                targetPrice = Math.round(livePrice * (1 + effectiveUpside / 100) * 10) / 10;
+              }
+            } else if (st.currentPrice && st.currentPrice > 0) {
+              livePrice = st.currentPrice;
+              if (!targetPrice || targetPrice <= livePrice) {
+                const effectiveUpside = Math.max(geminiUpside, minUpside || 0);
+                targetPrice = Math.round(livePrice * (1 + effectiveUpside / 100) * 10) / 10;
+              }
             }
 
-            let upside = typeof st.upsidePercent === 'number' ? st.upsidePercent : 15;
+            let upside = 0;
             if (livePrice && targetPrice && livePrice > 0) {
               upside = Math.round(((targetPrice - livePrice) / livePrice) * 1000) / 10;
+            } else {
+              upside = geminiUpside;
+            }
+
+            // CRITICAL: Guarantee that if the user asked for minimum upside (e.g. 30%), the final upside & target NEVER drop below it!
+            if (minUpside && minUpside > 0 && upside < minUpside) {
+              upside = Math.max(minUpside, geminiUpside);
+              if (livePrice && livePrice > 0) {
+                targetPrice = Math.round(livePrice * (1 + upside / 100) * 10) / 10;
+              }
             }
 
             return {
