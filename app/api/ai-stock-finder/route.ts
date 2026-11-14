@@ -86,9 +86,12 @@ User query: "${query}"
 ${filterLines.length > 0 ? `ACTIVE CLIENT FILTERS:\n${filterLines.join('\n')}\n` : ''}
 ${portfolioSummary}
 
-YOUR TASK:
-Analyze real US equities, recent quarterly earnings reports, analyst consensus targets, balance sheets, P/E ratios, dividends, and industry catalysts.
-Select EXACTLY 3 real, liquid, publicly traded US stocks (NYSE/NASDAQ) that best match the client's criteria and filters.
+CRITICAL MANDATE - GOOGLE FINANCE IS THE PRIMARY SOURCE:
+- You MUST check and prioritize Google Finance (https://www.google.com/finance) as your FIRST and PRIMARY reference for:
+  1. Real-time market prices, P/E ratios, market caps, and 52-week ranges.
+  2. Official 1-year analyst price target estimates & consensus recommendations (FactSet / S&P consensus on Google Finance).
+- Cross-check and verify with Wall Street institutional consensus and latest quarterly earnings.
+- Select EXACTLY 3 real, liquid, publicly traded stocks that best match the client's criteria and filters.
 
 CRITICAL FOR "portfolioFitScore" & "portfolioFitReason":
 - For each stock, calculate a compatibility score (75 to 98) representing how well this stock complements or diversifies the client's current portfolio holdings.
@@ -97,13 +100,15 @@ CRITICAL FOR "portfolioFitScore" & "portfolioFitReason":
 Return ONLY a valid JSON object (no markdown backticks, no codeblocks) with this exact schema:
 {
   "query": "${query}",
+  "primarySource": "Google Finance",
+  "sourcesUsed": ["Google Finance", "Wall Street Consensus"],
   "stocks": [
     {
       "symbol": "string (uppercase ticker, e.g. MSFT, AAPL, AMZN)",
       "name": "string (official company name)",
       "sector": "string in Hebrew (e.g. טכנולוגיה ותוכנה, שבבים, בריאות ורפואה, אנרגיה, צריכה בסיסית)",
       "currentPrice": number (approximate current price in USD),
-      "targetPrice": number (average 12-month analyst consensus target in USD),
+      "targetPrice": number (average 12-month analyst consensus target in USD from Google Finance),
       "upsidePercent": number (percentage upside target, e.g. 18.5),
       "rating": "Strong Buy" | "Buy" | "Moderate Buy",
       "peRatio": number (current trailing or forward P/E ratio, e.g. 24.2),
@@ -215,6 +220,8 @@ CRITICAL: Return EXACTLY 3 stocks in the stocks array. All Hebrew text must be n
               whyMatch: st.whyMatch || '',
               earningsBeat: st.earningsBeat || '',
               catalyst: st.catalyst || '',
+              googleFinanceUrl: `https://www.google.com/finance/quote/${sym}`,
+              primarySource: 'Google Finance',
             };
           })
         );
@@ -222,6 +229,8 @@ CRITICAL: Return EXACTLY 3 stocks in the stocks array. All Hebrew text must be n
         const resultData = {
           query,
           filters: filters || {},
+          primarySource: 'Google Finance',
+          sourcesUsed: ['Google Finance (מקור ראשי)', 'Wall Street Consensus', 'Investing.com'],
           stocks: enrichedStocks,
           summaryHe: parsed.summaryHe || `נמצאו 3 מניות מובילות העונות בדיוק על הבקשה: "${query}".`,
           foundAt: new Date().toISOString(),

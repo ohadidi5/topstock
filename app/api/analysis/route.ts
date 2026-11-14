@@ -213,6 +213,14 @@ function getInvestingUrl(symbol: string): { globalUrl: string; ilUrl: string } {
   };
 }
 
+function getGoogleFinanceUrl(symbol: string): string {
+  const sym = symbol.toUpperCase();
+  if (sym.endsWith('.TA')) {
+    return `https://www.google.com/finance/quote/${sym.replace(/\.TA$/i, '')}:TLV`;
+  }
+  return `https://www.google.com/finance/quote/${sym}`;
+}
+
 export async function GET(request: Request) {
   if (!GEMINI_API_KEY) {
     return NextResponse.json({ error: 'GEMINI_API_KEY is not configured on the server' }, { status: 500 });
@@ -231,7 +239,8 @@ export async function GET(request: Request) {
   const isIsraeli = symbol.endsWith('.TA') || /^[0-9]+$/.test(symbol);
   const baseSymbol = symbol.replace(/\.TA$/i, '');
 
-  // URLs for sources
+  // URLs for sources - Google Finance is primary
+  const googleFinanceUrl = getGoogleFinanceUrl(symbol);
   const tipranksUrl = `https://www.tipranks.com/stocks/${baseSymbol.toLowerCase()}/forecast`;
   const stockAnalysisUrl = `https://stockanalysis.com/stocks/${baseSymbol.toLowerCase()}/ratings/`;
   const investingUrls = getInvestingUrl(symbol);
@@ -249,11 +258,16 @@ export async function GET(request: Request) {
     prompt = `You are an institutional financial analyst specialized in Israeli equities (Tel Aviv Stock Exchange - TASE) and dual-listed stocks.
 Perform an exhaustive, deep analyst consensus check for the Israeli stock ${symbol} (Tel Aviv ticker: ${symbol}, base/US ticker: ${baseSymbol}).
 
-Carefully inspect and cross-reference analyst forecasts, consensus estimates, and 12-month price targets from:
-1. Investing.com Israel (${investingUrls.ilUrl}) & Global Investing.com (${investingUrls.globalUrl})
-2. Leading Israeli research departments & brokerage houses: Leader Capital Markets (לידר שוקי הון), IBI בית השקעות, Meitav (מיטב דש), Excellence (אקסלנס), Bank Hapoalim Research (בנק הפועלים), Leumi Capital Markets (בנק לאומי), Clal Finance, Psagot, etc.
-3. Global investment banks covering Israeli equities: Barclays, Jefferies, Morgan Stanley, Citi, JPMorgan, UBS, etc.
-4. TipRanks (${tipranksUrl}) & StockAnalysis (${stockAnalysisUrl}) (for dual-listed shares).
+PRIMARY SOURCE MANDATE - GOOGLE FINANCE FIRST:
+- You MUST check and prioritize Google Finance (${googleFinanceUrl}) as your FIRST and PRIMARY source of truth for:
+  1. Real-time market price, currency, and market valuation.
+  2. Official 1-year analyst consensus target price and price target range (FactSet / S&P consensus on Google Finance).
+  3. Official consensus recommendation (Strong Buy, Buy, Hold, Underperform, Sell).
+- ONLY AFTER CHECKING GOOGLE FINANCE, enrich and cross-examine with:
+  1. Investing.com Israel (${investingUrls.ilUrl}) & Global Investing.com (${investingUrls.globalUrl})
+  2. Leading Israeli research departments & brokerage houses: Leader Capital Markets (לידר שוקי הון), IBI בית השקעות, Meitav (מיטב דש), Excellence (אקסלנס), Bank Hapoalim Research (בנק הפועלים), Leumi Capital Markets (בנק לאומי), Clal Finance, Psagot, etc.
+  3. Global investment banks covering Israeli equities: Barclays, Jefferies, Morgan Stanley, Citi, JPMorgan, UBS, etc.
+  4. TipRanks (${tipranksUrl}) & StockAnalysis (${stockAnalysisUrl}) (for dual-listed shares).
 
 CRITICAL DIRECTIVE - YOU MUST NEVER RETURN EMPTY OR NO DATA FOR THIS STOCK:
 - You MUST thoroughly analyze and return the official 12-month average target price, high target, low target, consensus recommendation rating (Strong Buy / Moderate Buy / Hold / Moderate Sell / Strong Sell), analyst count, buy/hold/sell counts, and detailed analyst/firm list.
@@ -272,7 +286,7 @@ Return ONLY a JSON object (no markdown, no backticks, no extra text) with this e
   "buyCount": number|null,
   "holdCount": number|null,
   "sellCount": number|null,
-  "sourcesUsed": ["Investing.com Israel", "Leader Capital Markets", "IBI Investment House", "Bank Hapoalim Research", "TipRanks"],
+  "sourcesUsed": ["Google Finance (מקור ראשי)", "Investing.com Israel", "Leader Capital Markets", "IBI Investment House", "Bank Hapoalim Research", "TipRanks"],
   "uniqueAnalysts": [
     {
       "name": string,
@@ -286,10 +300,17 @@ Return ONLY a JSON object (no markdown, no backticks, no extra text) with this e
   "summaryHe": string[] // EXACTLY 4 short sentences IN HEBREW summarizing the overall analyst sentiment, business catalysts, and valuation
 }`;
   } else {
-    prompt = `Read and cross-examine the analyst forecast and 12-month price target tables for stock ${symbol} from TipRanks (${tipranksUrl}) and Investing.com (${investingUrls.globalUrl}).
+    prompt = `Read and cross-examine the analyst forecast and 12-month price target tables for stock ${symbol}.
 
-CRITICAL DIRECTIVE - MAXIMUM COMPREHENSIVE EXTRACTION ACROSS TIPRANKS & INVESTING.COM:
-- Your primary goal is to extract EVERY SINGLE analyst rating row shown for ${symbol} across TipRanks and Investing.com.
+PRIMARY SOURCE MANDATE - GOOGLE FINANCE FIRST:
+- You MUST check and prioritize Google Finance (${googleFinanceUrl}) as your FIRST and PRIMARY source of truth for:
+  1. Real-time market price, market cap, and valuation.
+  2. Official 1-year analyst price target estimate & consensus recommendations (FactSet / S&P consensus on Google Finance).
+  3. Consensus rating breakdown.
+- ONLY AFTER CHECKING GOOGLE FINANCE, enrich and cross-examine with TipRanks (${tipranksUrl}), Investing.com (${investingUrls.globalUrl}), and StockAnalysis (${stockAnalysisUrl}).
+
+CRITICAL DIRECTIVE - MAXIMUM COMPREHENSIVE EXTRACTION ACROSS SOURCES:
+- Your primary goal is to extract EVERY SINGLE analyst rating row shown for ${symbol} across Google Finance, TipRanks and Investing.com.
 - Also extract the official consensus "averagePriceTarget", "highPriceTarget", and "lowPriceTarget" shown on the page headers.
 - Do NOT sample, do NOT stop after 5 or 10. Extract all 15, 20, 30, 40 or more analysts available!
 - For every analyst, extract:
@@ -298,7 +319,7 @@ CRITICAL DIRECTIVE - MAXIMUM COMPREHENSIVE EXTRACTION ACROSS TIPRANKS & INVESTIN
   * "rating": e.g. "Buy", "Hold", "Sell", "Outperform", "Neutral"
   * "priceTarget": numeric USD price target (or null)
   * "date": publication date string
-  * "source": "TipRanks", "Investing.com", or "TipRanks & Investing.com"
+  * "source": "Google Finance", "TipRanks", "Investing.com", or "Google Finance & TipRanks"
 ${dateConstraint}
 
 Return ONLY a JSON object (no markdown, no backticks, no extra text) with this exact schema:
@@ -307,7 +328,7 @@ Return ONLY a JSON object (no markdown, no backticks, no extra text) with this e
   "averagePriceTarget": number|null,
   "highPriceTarget": number|null,
   "lowPriceTarget": number|null,
-  "sourcesUsed": ["TipRanks", "Investing.com"],
+  "sourcesUsed": ["Google Finance (מקור ראשי)", "TipRanks", "Investing.com"],
   "uniqueAnalysts": [
     {
       "name": string,
@@ -318,7 +339,7 @@ Return ONLY a JSON object (no markdown, no backticks, no extra text) with this e
       "source": string
     }
   ],
-  "summaryHe": string[] // EXACTLY 4 short sentences IN HEBREW summarizing the overall analyst sentiment and expectations across TipRanks, Investing.com, and consensus
+  "summaryHe": string[] // EXACTLY 4 short sentences IN HEBREW summarizing the overall analyst sentiment and expectations across Google Finance, TipRanks, Investing.com, and consensus
 }`;
   }
 
@@ -582,8 +603,9 @@ Return ONLY a JSON object:
             })
           : [];
 
-        // Determine sources used
+        // Determine sources used - Google Finance is primary
         const sourcesSet = new Set<string>();
+        sourcesSet.add('Google Finance (מקור ראשי)');
         if (Array.isArray(parsed?.sourcesUsed)) {
           parsed.sourcesUsed.forEach((s: string) => sourcesSet.add(s));
         }
@@ -594,11 +616,6 @@ Return ONLY a JSON object:
         if (saAnalysts.length > 0 || saData.topAverageTarget) {
           sourcesSet.add('StockAnalysis.com');
         }
-        if (sourcesSet.size === 0) {
-          sourcesSet.add(isIsraeli ? 'Investing.com ישראל' : 'Investing.com');
-          sourcesSet.add('TipRanks');
-          sourcesSet.add('StockAnalysis.com');
-        }
         const sourcesUsed = Array.from(sourcesSet);
 
         return NextResponse.json({
@@ -606,6 +623,7 @@ Return ONLY a JSON object:
           model,
           fromDate: fromDate || null,
           sources: [
+            { name: 'Google Finance (מקור ראשי)', url: googleFinanceUrl },
             { name: isIsraeli ? 'Investing.com ישראל' : 'Investing.com', url: investingDisplayUrl },
             { name: 'TipRanks', url: tipranksUrl },
             { name: 'StockAnalysis.com', url: stockAnalysisUrl },

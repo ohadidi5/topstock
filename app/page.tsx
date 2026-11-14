@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   Search, TrendingUp, TrendingDown, Trash2, Activity, Plus, Settings, Sparkles, RefreshCw, Clock,
   LineChart, X, Target, Calendar, Bookmark, Eye,
-  User, LogIn, LogOut, KeyRound, CheckCircle2, Menu, Scale
+  User, LogIn, LogOut, KeyRound, CheckCircle2, Menu, Scale, ExternalLink
 } from 'lucide-react';
 
 type Currency = 'ILS' | 'USD' | 'EUR';
@@ -2617,8 +2617,8 @@ export default function Home() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.35rem', flexWrap: 'wrap' }}>
                   <span className="modal-subtitle" style={{ margin: 0 }}>
                     {analysisSymbol?.endsWith('.TA')
-                      ? 'מקורות: Investing.com ישראל, לידר, אי.בי.אי, הפועלים, לאומי, TipRanks'
-                      : 'מקורות: TipRanks, Investing.com ו-StockAnalysis.com (ללא כפילויות)'}
+                      ? 'מקור ראשי: Google Finance • מוצלב עם Investing.com ישראל, בנקי השקעות ו-TipRanks'
+                      : 'מקור ראשי: Google Finance • מוצלב עם TipRanks, Investing.com ו-StockAnalysis'}
                   </span>
                   {(() => {
                     const cacheKey = analysisDateFilter ? `${analysisSymbol}_${analysisDateFilter}` : analysisSymbol;
@@ -2948,6 +2948,15 @@ export default function Home() {
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
                     <div>
                       מקורות הנתונים:{' '}
+                      <a
+                        href={a.sources?.find((s: any) => s.name?.includes('Google'))?.url || (analysisSymbol?.endsWith('.TA') ? `https://www.google.com/finance/quote/${analysisSymbol.replace(/\.TA$/i, '')}:TLV` : `https://www.google.com/finance/quote/${analysisSymbol}`)}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: '#60a5fa', fontWeight: 700 }}
+                      >
+                        Google Finance (ראשי)
+                      </a>
+                      {' · '}
                       <a href={a.sources?.find((s: any) => s.name?.includes('Investing'))?.url || `https://il.investing.com/search/?q=${encodeURIComponent(analysisSymbol.replace(/\.TA$/i, ''))}`} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-color)' }}>
                         {analysisSymbol?.endsWith('.TA') ? 'Investing.com ישראל' : 'Investing.com'}
                       </a>
@@ -3751,7 +3760,7 @@ export default function Home() {
                   </h2>
                 </div>
                 <p style={{ margin: '0.4rem 0 0', color: 'var(--text-muted)', fontSize: '0.88rem', lineHeight: 1.4 }}>
-                  כתוב ל-Gemini כל פקודה או תיאור של מניות שאתה מחפש, והוא ינתח את הדוחות והתחזיות ויציג לך בדיוק 3 מניות מתאימות עם יעדי האנליסטים.
+                  כתוב ל-Gemini כל פקודה או תיאור של מניות שאתה מחפש, והוא יבדוק תחילה ב-<strong>Google Finance (מקור ראשי)</strong> ויציג לך בדיוק 3 מניות מתאימות עם יעדי האנליסטים.
                 </p>
               </div>
 
@@ -4048,9 +4057,14 @@ export default function Home() {
                       marginBottom: '1.5rem',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--accent-color)', fontWeight: 700, fontSize: '0.85rem', marginBottom: '0.35rem' }}>
-                      <Sparkles size={15} />
-                      <span>סיכום הבחירה של Gemini:</span>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.35rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--accent-color)', fontWeight: 700, fontSize: '0.85rem' }}>
+                        <Sparkles size={15} />
+                        <span>סיכום הבחירה של Gemini:</span>
+                      </div>
+                      <span style={{ fontSize: '0.74rem', padding: '0.15rem 0.55rem', borderRadius: '6px', background: 'rgba(59, 130, 246, 0.2)', color: '#93c5fd', fontWeight: 600 }}>
+                        מקור ראשי: Google Finance
+                      </span>
                     </div>
                     <div style={{ fontSize: '0.95rem', color: 'var(--text-main)', lineHeight: 1.55 }}>
                       {customFinderResults.summaryHe}
@@ -4360,6 +4374,9 @@ export default function Home() {
 
                         {/* Financial Metrics Chips */}
                         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.85rem' }}>
+                          <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.55rem', borderRadius: '6px', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.35)', color: '#93c5fd' }}>
+                            מקור ראשי: <strong style={{ color: '#60a5fa' }}>Google Finance</strong>
+                          </span>
                           {st.peRatio && (
                             <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.55rem', borderRadius: '6px', background: 'rgba(255, 255, 255, 0.04)', border: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
                               📊 מכפיל P/E: <strong style={{ color: 'var(--text-main)' }}>{st.peRatio}</strong>
@@ -4505,6 +4522,29 @@ export default function Home() {
                             <Sparkles size={13} />
                             <span>סיכום דוחות AI</span>
                           </button>
+
+                          <a
+                            href={st.googleFinanceUrl || (st.symbol?.endsWith('.TA') ? `https://www.google.com/finance/quote/${st.symbol.replace(/\.TA$/i, '')}:TLV` : `https://www.google.com/finance/quote/${st.symbol}`)}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.35rem',
+                              padding: '0.4rem 0.75rem',
+                              borderRadius: '6px',
+                              background: 'rgba(59, 130, 246, 0.12)',
+                              border: '1px solid rgba(59, 130, 246, 0.35)',
+                              color: '#60a5fa',
+                              fontSize: '0.82rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              textDecoration: 'none',
+                            }}
+                          >
+                            <ExternalLink size={13} />
+                            <span>Google Finance</span>
+                          </a>
                         </div>
                       </div>
                     );
