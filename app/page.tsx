@@ -1059,17 +1059,32 @@ export default function Home() {
     }, 100);
   };
 
-  // Fetch real-time prices for portfolio - optimized with silent polling & change-guarding
+  // Fetch real-time prices for portfolio - optimized with silent polling, change-guarding, and background tab sleep
+  const portfolioRef = useRef(portfolio);
   useEffect(() => {
+    portfolioRef.current = portfolio;
+  }, [portfolio]);
+
+  useEffect(() => {
+    let isFetching = false;
+    let isMounted = true;
+    let intervalId: any = null;
+
     const fetchQuotes = async (isBackground = false) => {
-      if (portfolio.length === 0) return;
+      // Don't poll if page is hidden in background or already fetching
+      if (typeof document !== 'undefined' && document.hidden && isBackground) return;
+      if (isFetching) return;
+      const currentPortfolio = portfolioRef.current;
+      if (!currentPortfolio || currentPortfolio.length === 0) return;
+
+      isFetching = true;
       if (!isBackground) setIsLoadingQuotes(true);
       try {
-        const symbols = portfolio.map(s => s.symbol).join(',');
-        const res = await fetch(`/api/quotes?symbols=${symbols}`);
+        const symbols = currentPortfolio.map(s => s.symbol).join(',');
+        const res = await fetch(`/api/quotes?symbols=${encodeURIComponent(symbols)}`);
         const data = await res.json();
         
-        if (data && data.quotes) {
+        if (isMounted && data && data.quotes) {
           setPortfolio(prev => {
             let hasChanged = false;
             const updated = prev.map(stock => {
@@ -1114,13 +1129,42 @@ export default function Home() {
       } catch (err) {
         console.error("Failed to fetch quotes:", err);
       } finally {
-        if (!isBackground) setIsLoadingQuotes(false);
+        isFetching = false;
+        if (isMounted && !isBackground) setIsLoadingQuotes(false);
       }
     };
 
     fetchQuotes(false);
-    const interval = setInterval(() => fetchQuotes(true), 60000); // Silent background update
-    return () => clearInterval(interval);
+
+    // Only run periodic background polling when page is visible
+    intervalId = setInterval(() => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        fetchQuotes(true);
+      }
+    }, 60000);
+
+    // Refresh instantly when user returns to the tab after being away
+    let lastResumeFetch = Date.now();
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        // If more than 30s passed since last fetch or return, refresh once cleanly
+        const now = Date.now();
+        if (now - lastResumeFetch > 30000) {
+          lastResumeFetch = now;
+          fetchQuotes(true);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleVisibilityChange);
+
+    return () => {
+      isMounted = false;
+      if (intervalId) clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
+    };
   }, [portfolio.length]); // Re-run when stocks are added/removed
 
   const [isSearchFocused, setIsSearchFocused] = useState(false);

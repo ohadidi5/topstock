@@ -243,43 +243,92 @@ export default function WatchlistPage() {
     };
   }, []);
 
-  // 2. Fetch live quotes for watchlist
-  const fetchQuotes = async () => {
-    if (watchlist.length === 0) return;
-    setIsLoadingQuotes(true);
+  // 2. Fetch live quotes for watchlist - with background tab pause and instant focus refresh
+  const watchlistRef = useRef(watchlist);
+  useEffect(() => {
+    watchlistRef.current = watchlist;
+  }, [watchlist]);
+
+  const isFetchingQuotesRef = useRef(false);
+
+  const fetchQuotes = async (isBackground = false) => {
+    if (typeof document !== 'undefined' && document.hidden && isBackground) return;
+    if (isFetchingQuotesRef.current) return;
+    const currentList = watchlistRef.current;
+    if (!currentList || currentList.length === 0) return;
+
+    isFetchingQuotesRef.current = true;
+    if (!isBackground) setIsLoadingQuotes(true);
     try {
-      const symbols = watchlist.map(s => s.symbol).join(',');
-      const res = await fetch(`/api/quotes?symbols=${symbols}`);
+      const symbols = currentList.map(s => s.symbol).join(',');
+      const res = await fetch(`/api/quotes?symbols=${encodeURIComponent(symbols)}`);
       const data = await res.json();
       if (data?.quotes) {
         setWatchlist(prev => {
+          let hasChanged = false;
           const updated = prev.map(item => {
             const quote = data.quotes[item.symbol];
-            return {
-              ...item,
-              currentPrice: quote?.regularMarketPrice || item.currentPrice,
-              dailyChange: quote?.regularMarketChange || item.dailyChange,
-              dailyPercentChange: quote?.regularMarketChangePercent || item.dailyPercentChange,
-            };
+            if (!quote) return item;
+            const newPrice = quote.regularMarketPrice ?? item.currentPrice;
+            const newChange = quote.regularMarketChange ?? item.dailyChange;
+            const newPct = quote.regularMarketChangePercent ?? item.dailyPercentChange;
+            if (newPrice !== item.currentPrice || newChange !== item.dailyChange || newPct !== item.dailyPercentChange) {
+              hasChanged = true;
+              return {
+                ...item,
+                currentPrice: newPrice,
+                dailyChange: newChange,
+                dailyPercentChange: newPct,
+              };
+            }
+            return item;
           });
-          try {
-            localStorage.setItem('stockWatchlist', JSON.stringify(updated));
-          } catch (e) {}
-          return updated;
+          if (hasChanged) {
+            try {
+              localStorage.setItem('stockWatchlist', JSON.stringify(updated));
+            } catch (e) {}
+            return updated;
+          }
+          return prev;
         });
       }
     } catch (err) {
       console.error('Failed to fetch watchlist quotes:', err);
     } finally {
-      setIsLoadingQuotes(false);
+      isFetchingQuotesRef.current = false;
+      if (!isBackground) setIsLoadingQuotes(false);
     }
   };
 
   useEffect(() => {
     if (watchlist.length > 0) {
-      fetchQuotes();
-      const interval = setInterval(fetchQuotes, 60000);
-      return () => clearInterval(interval);
+      fetchQuotes(false);
+
+      const intervalId = setInterval(() => {
+        if (typeof document !== 'undefined' && !document.hidden) {
+          fetchQuotes(true);
+        }
+      }, 60000);
+
+      let lastResume = Date.now();
+      const handleVisibilityChange = () => {
+        if (typeof document !== 'undefined' && !document.hidden) {
+          const now = Date.now();
+          if (now - lastResume > 30000) {
+            lastResume = now;
+            fetchQuotes(true);
+          }
+        }
+      };
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('focus', handleVisibilityChange);
+
+      return () => {
+        if (intervalId) clearInterval(intervalId);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('focus', handleVisibilityChange);
+      };
     }
   }, [watchlist.length]);
 
@@ -682,7 +731,7 @@ export default function WatchlistPage() {
             </div>
           </div>
           <button
-            onClick={fetchQuotes}
+            onClick={() => fetchQuotes(false)}
             disabled={isLoadingQuotes}
             className="btn btn-secondary"
             style={{
