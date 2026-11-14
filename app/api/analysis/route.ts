@@ -40,6 +40,140 @@ interface StockAnalysisResult {
   allAnalystCount: number | null;
 }
 
+interface GoogleFinanceAnalysisResult {
+  url: string | null;
+  currentPrice: number | null;
+  averageTargetPrice: number | null;
+  highTargetPrice: number | null;
+  lowTargetPrice: number | null;
+  upsidePercent: number | null;
+  rating: string | null;
+  analystCount: number | null;
+  buyCount: number | null;
+  holdCount: number | null;
+  sellCount: number | null;
+  analysts: ExtractedAnalyst[];
+}
+
+// Direct, fast server extraction of Google Finance 12-month forecast, consensus rating, and analyst table
+async function fetchGoogleFinanceAnalysisData(symbol: string): Promise<GoogleFinanceAnalysisResult> {
+  const clean = symbol.replace(/\.TA$/i, '').toUpperCase().trim();
+  const exchanges = ['NASDAQ', 'NYSE', 'NYSEAMERICAN'];
+
+  const results = await Promise.all(
+    exchanges.map(async (ex): Promise<GoogleFinanceAnalysisResult | null> => {
+      const url = `https://www.google.com/finance/quote/${clean}:${ex}`;
+      try {
+        const res = await fetch(url, {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+          },
+          signal: AbortSignal.timeout(6500),
+        });
+        if (!res.ok) return null;
+        const html = await res.text();
+        const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+
+        if (!text.includes('12-month forecast')) return null;
+
+        const rMatch = text.match(
+          /Based on (\d+) analysts giving stock ratings to [A-Za-z0-9.]+ in the past 3 months\s*(Strong buy|Buy|Hold|Sell|Strong sell|Outperform|Underperform)?\s*Buy\s+(\d+)\s+Hold\s+(\d+)\s+Sell\s+(\d+)/i
+        );
+        const analystCount = rMatch ? parseInt(rMatch[1], 10) : null;
+        let rating = rMatch && rMatch[2] ? rMatch[2].trim() : null;
+        if (rating) {
+          if (rating.toLowerCase() === 'strong buy') rating = 'Strong Buy';
+          else if (rating.toLowerCase() === 'strong sell') rating = 'Strong Sell';
+          else rating = rating.charAt(0).toUpperCase() + rating.slice(1).toLowerCase();
+        }
+        const buyCount = rMatch ? parseInt(rMatch[3], 10) : null;
+        const holdCount = rMatch ? parseInt(rMatch[4], 10) : null;
+        const sellCount = rMatch ? parseInt(rMatch[5], 10) : null;
+
+        const fMatch = text.match(
+          /12-month forecast[\s\S]{0,220}?Highest\s+Current\s+[₪$€£]?([\d,.]+)\s+[₪$€£]?([\d,.]+)\s+\(\s*([+-]?[\d.]+)%\s*\)\s+Average\s+[₪$€£]?([\d,.]+)\s+\(\s*([+-]?[\d.]+)%\s*\)\s+Lowest\s+[₪$€£]?([\d,.]+)\s+\(\s*([+-]?[\d.]+)%\s*\)/i
+        );
+        if (!fMatch) return null;
+
+        const currentPrice = parseFloat(fMatch[1].replace(/,/g, ''));
+        const highTargetPrice = parseFloat(fMatch[2].replace(/,/g, ''));
+        const averageTargetPrice = parseFloat(fMatch[4].replace(/,/g, ''));
+        const upsidePercent = parseFloat(fMatch[5]);
+        const lowTargetPrice = parseFloat(fMatch[6].replace(/,/g, ''));
+
+        // Extract individual analysts from Google Finance table (<tr class="bqUY8">)
+        const rowMatches = html.match(/<tr class="bqUY8">[\s\S]*?<\/tr>/g) || [];
+        const analysts: ExtractedAnalyst[] = [];
+        for (const row of rowMatches) {
+          const nameM = row.match(/<div class="jO56v">([^<]+)<\/div>/);
+          const firmM = row.match(/<div class="oj2aRe">([^<]+)<\/div>/);
+          const tds = row.match(/<td[^>]*>[\s\S]*?<\/td>/g) || [];
+          if (nameM && tds.length >= 6) {
+            const rawName = nameM[1].replace(/&amp;/g, '&').replace(/&#39;/g, "'").trim();
+            if (!rawName || rawName.toLowerCase().includes('unknown')) continue;
+            const cleanTd = (s: string) =>
+              s.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim();
+            const rec = cleanTd(tds[1]) || 'Buy';
+            const ptStr = cleanTd(tds[3]);
+            const ptM = ptStr.match(/([\d,.]+)/);
+            const pt = ptM ? parseFloat(ptM[1].replace(/,/g, '')) : null;
+            const dateStr = cleanTd(tds[5]);
+            let formattedDate = dateStr;
+            const mdy = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            if (mdy) {
+              formattedDate = `${mdy[3]}-${mdy[1].padStart(2, '0')}-${mdy[2].padStart(2, '0')}`;
+            }
+            analysts.push({
+              name: rawName,
+              firm: firmM ? firmM[1].replace(/&amp;/g, '&').replace(/&#39;/g, "'").trim() : '',
+              rating: rec,
+              priceTarget: pt && !isNaN(pt) && pt > 0 ? pt : null,
+              date: formattedDate,
+              source: 'Google Finance (ראשי)',
+            });
+          }
+        }
+
+        return {
+          url,
+          currentPrice,
+          averageTargetPrice,
+          highTargetPrice,
+          lowTargetPrice,
+          upsidePercent,
+          rating: rating || (upsidePercent >= 25 ? 'Strong Buy' : upsidePercent >= 5 ? 'Buy' : 'Hold'),
+          analystCount,
+          buyCount,
+          holdCount,
+          sellCount,
+          analysts,
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return (
+    results.find((r) => r !== null) || {
+      url: null,
+      currentPrice: null,
+      averageTargetPrice: null,
+      highTargetPrice: null,
+      lowTargetPrice: null,
+      upsidePercent: null,
+      rating: null,
+      analystCount: null,
+      buyCount: null,
+      holdCount: null,
+      sellCount: null,
+      analysts: [],
+    }
+  );
+}
+
 // Direct, fast server extraction of StockAnalysis ratings table and official consensus targets
 async function fetchStockAnalysisData(symbol: string): Promise<StockAnalysisResult> {
   try {
@@ -246,7 +380,8 @@ export async function GET(request: Request) {
   const investingUrls = getInvestingUrl(symbol);
   const investingDisplayUrl = isIsraeli ? investingUrls.ilUrl : investingUrls.globalUrl;
 
-  // Start fast server fetch of StockAnalysis (using baseSymbol for dual-listed Israeli stocks)
+  // Start fast server fetch of Google Finance (Primary) and StockAnalysis in parallel
+  const googleFinancePromise = fetchGoogleFinanceAnalysisData(baseSymbol);
   const stockAnalysisPromise = fetchStockAnalysisData(baseSymbol);
 
   const dateConstraint = fromDate
@@ -389,8 +524,9 @@ Return ONLY a JSON object (no markdown, no backticks, no extra text) with this e
           .join('');
         let parsed = extractJson(text);
 
-        // Await the parallel StockAnalysis results
-        const saData = await stockAnalysisPromise;
+        // Await the parallel Google Finance (primary) and StockAnalysis results
+        const [gfData, saData] = await Promise.all([googleFinancePromise, stockAnalysisPromise]);
+        const gfAnalysts = gfData.analysts;
         const saAnalysts = saData.analysts;
 
         let geminiAnalystsRaw: ExtractedAnalyst[] = Array.isArray(parsed?.uniqueAnalysts)
@@ -404,16 +540,16 @@ Return ONLY a JSON object (no markdown, no backticks, no extra text) with this e
                   rating: String(a.rating || '').trim(),
                   priceTarget: num(a.priceTarget),
                   date: String(a.date || '').trim(),
-                  source: src || (isIsraeli ? 'Investing.com ישראל' : 'TipRanks & Investing.com'),
+                  source: src || (isIsraeli ? 'Google Finance & Investing.com' : 'Google Finance'),
                 };
               })
           : [];
 
-        // Deep Fallback: If 0 analysts were extracted, run an unconstrained query so analyst data is ALWAYS found
-        if (geminiAnalystsRaw.length === 0 && saAnalysts.length === 0) {
+        // Deep Fallback: If 0 analysts were extracted across all sources, run an unconstrained query so analyst data is ALWAYS found
+        if (gfAnalysts.length === 0 && geminiAnalystsRaw.length === 0 && saAnalysts.length === 0) {
           try {
             const fallbackPrompt = `Provide comprehensive analyst consensus forecasts, price targets, and ratings for stock ${symbol} (${baseSymbol}).
-Check all available analyst estimates, 12-month target prices, consensus recommendations, and research firms (such as Leader Capital Markets, IBI, Meitav, Excellence, Bank Hapoalim, Leumi, Barclays, Jefferies, Morgan Stanley, TipRanks, Investing.com).
+Check all available analyst estimates, 12-month target prices, consensus recommendations, and research firms (such as Google Finance, Leader Capital Markets, IBI, Meitav, Excellence, Bank Hapoalim, Leumi, Barclays, Jefferies, Morgan Stanley, TipRanks, Investing.com).
 Current market price reference: ${price > 0 ? price : 'market price'}.
 
 Return ONLY a JSON object:
@@ -427,7 +563,7 @@ Return ONLY a JSON object:
   "buyCount": number,
   "holdCount": number,
   "sellCount": number,
-  "sourcesUsed": ${JSON.stringify(isIsraeli ? ["Investing.com ישראל", "Leader Capital Markets", "IBI בית השקעות", "בנק הפועלים", "TipRanks"] : ["TipRanks", "Investing.com", "Wall Street Consensus"])},
+  "sourcesUsed": ${JSON.stringify(isIsraeli ? ["Google Finance", "Investing.com ישראל", "Leader Capital Markets", "IBI בית השקעות", "TipRanks"] : ["Google Finance", "TipRanks", "Investing.com", "Wall Street Consensus"])},
   "uniqueAnalysts": [
     {
       "name": string,
@@ -469,7 +605,7 @@ Return ONLY a JSON object:
                   rating: String(a.rating || '').trim(),
                   priceTarget: num(a.priceTarget),
                   date: String(a.date || '').trim(),
-                  source: String(a.source || (isIsraeli ? 'Investing.com ישראל' : 'Investing.com')).trim(),
+                  source: String(a.source || 'Google Finance').trim(),
                 }));
               }
             }
@@ -479,25 +615,41 @@ Return ONLY a JSON object:
         }
 
         // Combine sources with strict deduplication
-        // If the exact same analyst name appears on multiple sites, merge into ONE entry!
+        // 1. Add Google Finance analysts FIRST (Primary Source)
         const mergedMap = new Map<string, ExtractedAnalyst>();
-
-        // 1. Add StockAnalysis analysts
-        for (const sa of saAnalysts) {
-          const key = sa.name.toLowerCase().trim();
-          mergedMap.set(key, sa);
+        for (const gfa of gfAnalysts) {
+          const key = gfa.name.toLowerCase().trim();
+          mergedMap.set(key, gfa);
         }
 
-        // 2. Add TipRanks / Investing.com analysts (if duplicate name, merge and label source)
+        // 2. Add StockAnalysis analysts
+        for (const sa of saAnalysts) {
+          const key = sa.name.toLowerCase().trim();
+          if (mergedMap.has(key)) {
+            const existing = mergedMap.get(key)!;
+            mergedMap.set(key, {
+              ...sa,
+              ...existing,
+              priceTarget: existing.priceTarget ?? sa.priceTarget,
+              stars: sa.stars,
+              source: 'Google Finance & StockAnalysis',
+            });
+          } else {
+            mergedMap.set(key, sa);
+          }
+        }
+
+        // 3. Add Gemini / TipRanks / Investing.com analysts
         for (const tr of geminiAnalystsRaw) {
           const key = tr.name.toLowerCase().trim();
           if (mergedMap.has(key)) {
             const existing = mergedMap.get(key)!;
             mergedMap.set(key, {
-              ...existing,
               ...tr,
+              ...existing,
+              priceTarget: existing.priceTarget ?? tr.priceTarget,
               stars: existing.stars,
-              source: `${tr.source} & StockAnalysis`,
+              source: existing.source.includes('Google Finance') ? existing.source : `${existing.source} & ${tr.source}`,
             });
           } else {
             mergedMap.set(key, tr);
@@ -518,7 +670,7 @@ Return ONLY a JSON object:
           }
         }
 
-        if (uniqueAnalysts.length === 0) {
+        if (uniqueAnalysts.length === 0 && (!gfData.averageTargetPrice || fromDate)) {
           return NextResponse.json(
             { error: `לא נמצאו תחזיות אנליסטים החל מתאריך ${fromDate} למנייה זו.` },
             { status: 404 }
@@ -539,21 +691,21 @@ Return ONLY a JSON object:
           const tableMean = Math.round((sum / validTargets.length) * 100) / 100;
           finalHighTarget = Math.max(...validTargets);
           finalLowTarget = Math.min(...validTargets);
-
-          // When no custom date filter is applied, use the official Top Analysts (4+ stars) target
-          // or official All-Analysts target from StockAnalysis/TipRanks so it matches the Top Stocks ranking 100%
-          if (!fromDate && saData.topAverageTarget && saData.topAverageTarget > 0) {
-            finalAverageTarget = saData.topAverageTarget;
-          } else if (!fromDate && saData.allAverageTarget && saData.allAverageTarget > 0) {
-            finalAverageTarget = saData.allAverageTarget;
-          } else {
-            finalAverageTarget = tableMean;
-          }
-        } else if (!fromDate && saData.topAverageTarget && saData.topAverageTarget > 0) {
-          finalAverageTarget = saData.topAverageTarget;
+          finalAverageTarget = tableMean;
         }
 
-        // Count buys, holds, sells across all analysts
+        // When no custom date filter is applied, Google Finance 12-month forecast is the #1 primary source!
+        if (!fromDate && gfData.averageTargetPrice && gfData.averageTargetPrice > 0) {
+          finalAverageTarget = gfData.averageTargetPrice;
+          if (gfData.highTargetPrice && gfData.highTargetPrice > 0) finalHighTarget = gfData.highTargetPrice;
+          if (gfData.lowTargetPrice && gfData.lowTargetPrice > 0) finalLowTarget = gfData.lowTargetPrice;
+        } else if (!fromDate && saData.topAverageTarget && saData.topAverageTarget > 0) {
+          finalAverageTarget = saData.topAverageTarget;
+        } else if (!fromDate && saData.allAverageTarget && saData.allAverageTarget > 0) {
+          finalAverageTarget = saData.allAverageTarget;
+        }
+
+        // Count buys, holds, sells across all analysts (prioritize live Google Finance counts when !fromDate)
         let calcBuys = 0;
         let calcHolds = 0;
         let calcSells = 0;
@@ -574,12 +726,12 @@ Return ONLY a JSON object:
         }
 
         const totalCategorized = calcBuys + calcHolds + calcSells;
-        const buyCount = totalCategorized > 0 ? calcBuys : num(parsed?.buyCount);
-        const holdCount = totalCategorized > 0 ? calcHolds : num(parsed?.holdCount);
-        const sellCount = totalCategorized > 0 ? calcSells : num(parsed?.sellCount);
+        const buyCount = !fromDate && gfData.buyCount !== null ? gfData.buyCount : (totalCategorized > 0 ? calcBuys : num(parsed?.buyCount));
+        const holdCount = !fromDate && gfData.holdCount !== null ? gfData.holdCount : (totalCategorized > 0 ? calcHolds : num(parsed?.holdCount));
+        const sellCount = !fromDate && gfData.sellCount !== null ? gfData.sellCount : (totalCategorized > 0 ? calcSells : num(parsed?.sellCount));
 
-        let consensusRating = typeof parsed?.consensusRating === 'string' ? parsed.consensusRating : null;
-        if (totalCategorized > 0) {
+        let consensusRating = !fromDate && gfData.rating ? gfData.rating : (typeof parsed?.consensusRating === 'string' ? parsed.consensusRating : null);
+        if (!consensusRating && totalCategorized > 0) {
           const buyRatio = calcBuys / totalCategorized;
           const sellRatio = calcSells / totalCategorized;
           if (buyRatio >= 0.7) consensusRating = 'Strong Buy';
@@ -589,9 +741,14 @@ Return ONLY a JSON object:
           else consensusRating = 'Hold';
         }
 
-        const analystCount = !fromDate && saData.allAnalystCount ? Math.max(uniqueAnalysts.length, saData.allAnalystCount) : uniqueAnalysts.length;
-        const forecastPercent =
-          finalAverageTarget !== null && price > 0 ? ((finalAverageTarget / price) - 1) * 100 : null;
+        const analystCount = !fromDate && gfData.analystCount
+          ? gfData.analystCount
+          : (!fromDate && saData.allAnalystCount ? Math.max(uniqueAnalysts.length, saData.allAnalystCount) : uniqueAnalysts.length);
+
+        const effectivePrice = gfData.currentPrice && gfData.currentPrice > 0 ? gfData.currentPrice : price;
+        const forecastPercent = !fromDate && gfData.upsidePercent !== null
+          ? gfData.upsidePercent
+          : (finalAverageTarget !== null && effectivePrice > 0 ? ((finalAverageTarget / effectivePrice) - 1) * 100 : null);
 
         const summaryLines = Array.isArray(parsed?.summaryHe)
           ? parsed.summaryHe.slice(0, 4).map((s: any) => {
@@ -623,7 +780,7 @@ Return ONLY a JSON object:
           model,
           fromDate: fromDate || null,
           sources: [
-            { name: 'Google Finance (מקור ראשי)', url: googleFinanceUrl },
+            { name: 'Google Finance (מקור ראשי)', url: gfData.url || googleFinanceUrl },
             { name: isIsraeli ? 'Investing.com ישראל' : 'Investing.com', url: investingDisplayUrl },
             { name: 'TipRanks', url: tipranksUrl },
             { name: 'StockAnalysis.com', url: stockAnalysisUrl },
@@ -631,8 +788,8 @@ Return ONLY a JSON object:
           sourcesUsed,
           consensusRating,
           averagePriceTarget: finalAverageTarget,
-          topAverageTarget: saData.topAverageTarget,
-          allAverageTarget: saData.allAverageTarget,
+          topAverageTarget: gfData.averageTargetPrice || saData.topAverageTarget,
+          allAverageTarget: gfData.averageTargetPrice || saData.allAverageTarget,
           highPriceTarget: finalHighTarget,
           lowPriceTarget: finalLowTarget,
           analystCount,
