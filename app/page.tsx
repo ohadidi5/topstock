@@ -291,6 +291,7 @@ export default function Home() {
   const [finderBeat, setFinderBeat] = useState<'all' | 'beatOnly'>('all');
   const [showComparisonMatrix, setShowComparisonMatrix] = useState(true);
   const [projectionYears, setProjectionYears] = useState<Record<string, number | string>>({});
+  const [projectionInvestments, setProjectionInvestments] = useState<Record<string, number | string>>({});
 
   const handleRunCustomFinder = async () => {
     if (!customFinderQuery.trim() || customFinderLoading) return;
@@ -4468,12 +4469,17 @@ export default function Home() {
                               </div>
                             </div>
 
-                            {/* Year selector buttons */}
+                            {/* Year & Investment selector buttons */}
                             {(() => {
                               const rawVal = projectionYears[st.symbol];
                               const parsedYears = typeof rawVal === 'number' ? rawVal : (rawVal !== undefined && rawVal !== '' ? parseInt(String(rawVal), 10) : NaN);
                               const effectiveYears = !isNaN(parsedYears) && parsedYears > 0 ? parsedYears : 10;
                               const inputValue = rawVal !== undefined ? rawVal : 10;
+
+                              const rawAmount = projectionInvestments[st.symbol];
+                              const parsedAmount = typeof rawAmount === 'number' ? rawAmount : (rawAmount !== undefined && rawAmount !== '' ? parseFloat(String(rawAmount)) : NaN);
+                              const effectiveAmount = !isNaN(parsedAmount) && parsedAmount > 0 ? parsedAmount : 10000;
+                              const inputAmountValue = rawAmount !== undefined ? rawAmount : 10000;
 
                               // Year 1 Return: 100% based on Google Finance Analyst 12-Month Target Forecast
                               const year1UpsidePercent = typeof st.upsidePercent === 'number' && !isNaN(st.upsidePercent)
@@ -4493,22 +4499,28 @@ export default function Home() {
 
                               const totalProjReturn = (combinedMultiplier - 1) * 100;
                               const futurePrice = (st.currentPrice || 100) * combinedMultiplier;
-                              const sample10k = 10000 * combinedMultiplier;
-                              const sampleProfit = sample10k - 10000;
+
+                              // Investment calculations in user's selected currency (summarySym)
+                              const futurePortfolioValue = effectiveAmount * combinedMultiplier;
+                              const profitBeforeTax = futurePortfolioValue - effectiveAmount;
+                              const taxRate = 0.25; // 25% מס רווחי הון
+                              const taxAmount = profitBeforeTax > 0 ? profitBeforeTax * taxRate : 0;
+                              const profitAfterTax = profitBeforeTax > 0 ? profitBeforeTax - taxAmount : profitBeforeTax;
 
                               return (
                                 <div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.65rem' }}>
-                                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>בחר טווח שנים:</span>
+                                  {/* Row 1: Years Selection */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.45rem' }}>
+                                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>טווח שנים:</span>
                                     {[1, 3, 5, 10, 15, 20].map((yr) => (
                                       <button
                                         key={yr}
                                         type="button"
                                         onClick={() => setProjectionYears(prev => ({ ...prev, [st.symbol]: yr }))}
                                         style={{
-                                          padding: '0.25rem 0.6rem',
+                                          padding: '0.22rem 0.55rem',
                                           borderRadius: '6px',
-                                          fontSize: '0.78rem',
+                                          fontSize: '0.76rem',
                                           fontWeight: 700,
                                           cursor: 'pointer',
                                           transition: 'all 0.15s ease',
@@ -4562,8 +4574,8 @@ export default function Home() {
                                           }
                                         }}
                                         style={{
-                                          width: '56px',
-                                          padding: '0.2rem 0.35rem',
+                                          width: '54px',
+                                          padding: '0.2rem 0.3rem',
                                           borderRadius: '6px',
                                           background: 'rgba(0,0,0,0.35)',
                                           border: '1px solid rgba(255, 255, 255, 0.2)',
@@ -4579,6 +4591,87 @@ export default function Home() {
                                     </div>
                                   </div>
 
+                                  {/* Row 2: Investment Amount Selection */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.65rem' }}>
+                                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>סכום להשקעה ({summarySym}):</span>
+                                    {[1000, 5000, 10000, 50000, 100000].map((amt) => (
+                                      <button
+                                        key={amt}
+                                        type="button"
+                                        onClick={() => setProjectionInvestments(prev => ({ ...prev, [st.symbol]: amt }))}
+                                        style={{
+                                          padding: '0.22rem 0.5rem',
+                                          borderRadius: '6px',
+                                          fontSize: '0.75rem',
+                                          fontWeight: 700,
+                                          cursor: 'pointer',
+                                          transition: 'all 0.15s ease',
+                                          background: effectiveAmount === amt ? 'rgba(251, 191, 36, 0.25)' : 'rgba(255, 255, 255, 0.06)',
+                                          border: effectiveAmount === amt ? '1px solid #fbbf24' : '1px solid var(--border-color)',
+                                          color: effectiveAmount === amt ? '#fbbf24' : 'var(--text-main)',
+                                        }}
+                                      >
+                                        {summarySym}{amt.toLocaleString()}
+                                      </button>
+                                    ))}
+                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', marginLeft: 'auto' }}>
+                                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ידני:</span>
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        step={100}
+                                        placeholder="10000"
+                                        dir="ltr"
+                                        value={inputAmountValue}
+                                        onFocus={(e) => {
+                                          e.target.select();
+                                        }}
+                                        onClick={(e) => {
+                                          (e.target as HTMLInputElement).select();
+                                        }}
+                                        onChange={(e) => {
+                                          const valStr = e.target.value;
+                                          if (valStr === '') {
+                                            setProjectionInvestments(prev => ({ ...prev, [st.symbol]: '' }));
+                                            return;
+                                          }
+                                          const num = parseFloat(valStr);
+                                          if (!isNaN(num)) {
+                                            setProjectionInvestments(prev => ({ ...prev, [st.symbol]: num }));
+                                          }
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            (e.target as HTMLElement).blur();
+                                          }
+                                        }}
+                                        onBlur={() => {
+                                          const current = projectionInvestments[st.symbol];
+                                          if (current === '' || current === undefined || isNaN(Number(current)) || Number(current) <= 0) {
+                                            setProjectionInvestments(prev => ({ ...prev, [st.symbol]: 10000 }));
+                                          }
+                                          if (typeof window !== 'undefined') {
+                                            window.scrollTo({ left: 0, behavior: 'smooth' });
+                                          }
+                                        }}
+                                        style={{
+                                          width: '82px',
+                                          padding: '0.2rem 0.35rem',
+                                          borderRadius: '6px',
+                                          background: 'rgba(0,0,0,0.35)',
+                                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                                          color: '#fff',
+                                          fontSize: '16px',
+                                          fontWeight: 700,
+                                          textAlign: 'center',
+                                          direction: 'ltr',
+                                          unicodeBidi: 'plaintext',
+                                        }}
+                                      />
+                                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{summarySym}</span>
+                                    </div>
+                                  </div>
+
                                   {/* Breakdown legend */}
                                   <div style={{ fontSize: '0.74rem', color: '#93c5fd', marginBottom: '0.55rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                                     <span>🎯 שנה 1 (תחזית אנליסטים Google Finance): <strong style={{ color: (st.upsidePercent || 0) >= 0 ? 'var(--profit-color)' : 'var(--loss-color)' }}>{(st.upsidePercent || 0) >= 0 ? '+' : ''}{st.upsidePercent}%</strong></span>
@@ -4591,7 +4684,7 @@ export default function Home() {
                                   <div
                                     style={{
                                       display: 'grid',
-                                      gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                                      gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
                                       gap: '0.5rem',
                                       background: 'rgba(0, 0, 0, 0.25)',
                                       padding: '0.65rem 0.85rem',
@@ -4600,7 +4693,7 @@ export default function Home() {
                                     }}
                                   >
                                     <div>
-                                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>תשואה מצטברת צפויה בעוד {effectiveYears} {effectiveYears === 1 ? 'שנה' : 'שנים'}:</div>
+                                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>תשואה מצטברת בעוד {effectiveYears} {effectiveYears === 1 ? 'שנה' : 'שנים'}:</div>
                                       <div style={{ fontSize: '1.05rem', fontWeight: 800, color: totalProjReturn >= 0 ? 'var(--profit-color)' : 'var(--loss-color)', direction: 'ltr', textAlign: 'right' }}>
                                         {totalProjReturn >= 0 ? '+' : ''}{totalProjReturn.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                                       </div>
@@ -4612,10 +4705,30 @@ export default function Home() {
                                       </div>
                                     </div>
                                     <div>
-                                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>השקעה של $10,000 תהיה שווה:</div>
+                                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>שווי תיק צפוי ({summarySym}):</div>
                                       <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fbbf24', direction: 'ltr', textAlign: 'right' }}>
-                                        ${Math.round(sample10k).toLocaleString()} <span style={{ fontSize: '0.75rem', color: 'var(--profit-color)' }}>(+${Math.round(sampleProfit).toLocaleString()})</span>
+                                        {summarySym}{futurePortfolioValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                       </div>
+                                      <div style={{ fontSize: '0.67rem', color: 'var(--text-muted)' }}>
+                                        מהשקעה של {summarySym}{effectiveAmount.toLocaleString()}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>רווח נקי לפני מס ({summarySym}):</div>
+                                      <div style={{ fontSize: '1.05rem', fontWeight: 800, color: profitBeforeTax >= 0 ? 'var(--profit-color)' : 'var(--loss-color)', direction: 'ltr', textAlign: 'right' }}>
+                                        {profitBeforeTax >= 0 ? '+' : ''}{summarySym}{profitBeforeTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>רווח נקי אחרי מס (25%):</div>
+                                      <div style={{ fontSize: '1.05rem', fontWeight: 800, color: profitAfterTax >= 0 ? 'var(--profit-color)' : 'var(--loss-color)', direction: 'ltr', textAlign: 'right' }}>
+                                        {profitAfterTax >= 0 ? '+' : ''}{summarySym}{profitAfterTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </div>
+                                      {profitBeforeTax > 0 && (
+                                        <div style={{ fontSize: '0.67rem', color: '#f87171' }}>
+                                          נוכה מס 25%: -{summarySym}{taxAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
