@@ -4513,7 +4513,15 @@ export default function Home() {
                                         min={1}
                                         max={100}
                                         placeholder="10"
+                                        dir="ltr"
                                         value={inputValue}
+                                        onFocus={(e) => {
+                                          // Automatically select the text on focus so typing replaces it or Backspace immediately deletes it
+                                          e.target.select();
+                                        }}
+                                        onClick={(e) => {
+                                          (e.target as HTMLInputElement).select();
+                                        }}
                                         onChange={(e) => {
                                           const valStr = e.target.value;
                                           if (valStr === '') {
@@ -4550,6 +4558,8 @@ export default function Home() {
                                           fontSize: '16px', // 16px prevents iOS/Android safari from zooming in automatically
                                           fontWeight: 700,
                                           textAlign: 'center',
+                                          direction: 'ltr',
+                                          unicodeBidi: 'plaintext',
                                         }}
                                       />
                                       <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>שנים</span>
