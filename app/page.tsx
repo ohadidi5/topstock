@@ -4525,20 +4525,29 @@ export default function Home() {
                                             setProjectionYears(prev => ({ ...prev, [st.symbol]: num }));
                                           }
                                         }}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            (e.target as HTMLElement).blur();
+                                          }
+                                        }}
                                         onBlur={() => {
                                           const current = projectionYears[st.symbol];
                                           if (current === '' || current === undefined || isNaN(Number(current)) || Number(current) <= 0) {
                                             setProjectionYears(prev => ({ ...prev, [st.symbol]: 10 }));
                                           }
+                                          // Auto zoom-out / reset viewport scroll when finished typing
+                                          if (typeof window !== 'undefined') {
+                                            window.scrollTo({ left: 0, behavior: 'smooth' });
+                                          }
                                         }}
                                         style={{
-                                          width: '52px',
-                                          padding: '0.25rem 0.4rem',
+                                          width: '56px',
+                                          padding: '0.2rem 0.35rem',
                                           borderRadius: '6px',
                                           background: 'rgba(0,0,0,0.35)',
                                           border: '1px solid rgba(255, 255, 255, 0.2)',
                                           color: '#fff',
-                                          fontSize: '0.82rem',
+                                          fontSize: '16px', // 16px prevents iOS/Android safari from zooming in automatically
                                           fontWeight: 700,
                                           textAlign: 'center',
                                         }}
