@@ -115,6 +115,97 @@ interface GoogleFinanceLiveData {
 
 const gfCache = new Map<string, { data: GoogleFinanceLiveData; expiresAt: number }>();
 
+async function fetchGoogleFinanceForExchange(clean: string, ex: string, signal?: AbortSignal): Promise<GoogleFinanceLiveData | null> {
+  const url = `https://www.google.com/finance/quote/${clean}:${ex}`;
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      signal: signal || AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+
+    if (!text.includes('12-month forecast')) return null;
+
+    // Parse 12-month forecast from Google Finance
+    const fMatch = text.match(
+      /12-month forecast[\s\S]{0,220}?Highest\s+Current\s+[₪$€£]?([\d,.]+)\s+[₪$€£]?([\d,.]+)\s+\(\s*([+-]?[\d.]+)%\s*\)\s+Average\s+[₪$€£]?([\d,.]+)\s+\(\s*([+-]?[\d.]+)%\s*\)\s+Lowest\s+[₪$€£]?([\d,.]+)\s+\(\s*([+-]?[\d.]+)%\s*\)/i
+    );
+    if (!fMatch) return null;
+
+    const currentPrice = parseFloat(fMatch[1].replace(/,/g, ''));
+    const highTargetPrice = parseFloat(fMatch[2].replace(/,/g, ''));
+    const averageTargetPrice = parseFloat(fMatch[4].replace(/,/g, ''));
+    const upsidePercent = parseFloat(fMatch[5]);
+    const lowTargetPrice = parseFloat(fMatch[6].replace(/,/g, ''));
+
+    if (!currentPrice || !averageTargetPrice || isNaN(upsidePercent)) return null;
+
+    // Parse Analyst ratings summary from Google Finance
+    const rMatch = text.match(
+      /Based on (\d+) analysts giving stock ratings to [A-Za-z0-9.]+ in the past 3 months\s*(Strong buy|Buy|Hold|Sell|Strong sell|Outperform|Underperform)?\s*Buy\s+(\d+)\s+Hold\s+(\d+)\s+Sell\s+(\d+)/i
+    );
+    const analystCount = rMatch ? parseInt(rMatch[1], 10) : null;
+    let rating = rMatch && rMatch[2] ? rMatch[2].trim() : null;
+    if (rating) {
+      if (rating.toLowerCase() === 'strong buy') rating = 'Strong Buy';
+      else if (rating.toLowerCase() === 'strong sell') rating = 'Strong Sell';
+      else rating = rating.charAt(0).toUpperCase() + rating.slice(1).toLowerCase();
+    } else {
+      rating = upsidePercent >= 25 ? 'Strong Buy' : upsidePercent >= 5 ? 'Buy' : 'Hold';
+    }
+    const buyCount = rMatch ? parseInt(rMatch[3], 10) : null;
+    const holdCount = rMatch ? parseInt(rMatch[4], 10) : null;
+    const sellCount = rMatch ? parseInt(rMatch[5], 10) : null;
+
+    // Parse fundamentals from Google Finance stats section
+    const mcMatch = text.match(/Mkt\.\s*cap\s+([\d.,]+\s*[TBMK]?)/i);
+    const marketCap = mcMatch ? mcMatch[1].trim() + '$' : null;
+
+    const peMatch = text.match(/P\/E\s*ratio\s+([\d.,]+)/i);
+    const peRatio = peMatch ? parseFloat(peMatch[1].replace(/,/g, '')) : null;
+
+    const divMatch = text.match(/Dividend\s+([\d.]+)%/i);
+    const dividendYield = divMatch ? parseFloat(divMatch[1]) : 0;
+
+    const high52Match = text.match(/52-wk\s*high\s+[₪$€£]?([\d,.]+)/i);
+    const high52 = high52Match ? parseFloat(high52Match[1].replace(/,/g, '')) : null;
+    let distanceFrom52wHigh: string | null = null;
+    if (high52 && currentPrice && high52 > 0) {
+      const diffPct = Math.round(((currentPrice - high52) / high52) * 100);
+      distanceFrom52wHigh = diffPct >= -1 ? 'בשיא שנתי' : `${diffPct}% מהשיא`;
+    }
+
+    return {
+      symbol: clean,
+      exchange: ex,
+      url,
+      hasForecast: true,
+      currentPrice,
+      averageTargetPrice,
+      upsidePercent,
+      highTargetPrice,
+      lowTargetPrice,
+      rating,
+      analystCount,
+      buyCount,
+      holdCount,
+      sellCount,
+      marketCap,
+      peRatio,
+      dividendYield,
+      distanceFrom52wHigh,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchGoogleFinanceLive(symbol: string): Promise<GoogleFinanceLiveData | null> {
   const clean = symbol.replace(/\.TA$/i, '').toUpperCase().trim();
   const cached = gfCache.get(clean);
@@ -122,105 +213,41 @@ export async function fetchGoogleFinanceLive(symbol: string): Promise<GoogleFina
     return cached.data;
   }
 
-  const exchanges = ['NASDAQ', 'NYSE', 'NYSEAMERICAN'];
-  const results = await Promise.all(
-    exchanges.map(async (ex): Promise<GoogleFinanceLiveData | null> => {
-      const url = `https://www.google.com/finance/quote/${clean}:${ex}`;
-      try {
-        const res = await fetch(url, {
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9',
-          },
-          signal: AbortSignal.timeout(6500),
-        });
-        if (!res.ok) return null;
-        const html = await res.text();
-        const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  // Check NASDAQ and NYSE in parallel with immediate cancellation
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 4500);
 
-        if (!text.includes('12-month forecast')) return null;
-
-        // Parse 12-month forecast from Google Finance
-        const fMatch = text.match(
-          /12-month forecast[\s\S]{0,220}?Highest\s+Current\s+[₪$€£]?([\d,.]+)\s+[₪$€£]?([\d,.]+)\s+\(\s*([+-]?[\d.]+)%\s*\)\s+Average\s+[₪$€£]?([\d,.]+)\s+\(\s*([+-]?[\d.]+)%\s*\)\s+Lowest\s+[₪$€£]?([\d,.]+)\s+\(\s*([+-]?[\d.]+)%\s*\)/i
-        );
-        if (!fMatch) return null;
-
-        const currentPrice = parseFloat(fMatch[1].replace(/,/g, ''));
-        const highTargetPrice = parseFloat(fMatch[2].replace(/,/g, ''));
-        const averageTargetPrice = parseFloat(fMatch[4].replace(/,/g, ''));
-        const upsidePercent = parseFloat(fMatch[5]);
-        const lowTargetPrice = parseFloat(fMatch[6].replace(/,/g, ''));
-
-        if (!currentPrice || !averageTargetPrice || isNaN(upsidePercent)) return null;
-
-        // Parse Analyst ratings summary from Google Finance
-        const rMatch = text.match(
-          /Based on (\d+) analysts giving stock ratings to [A-Za-z0-9.]+ in the past 3 months\s*(Strong buy|Buy|Hold|Sell|Strong sell|Outperform|Underperform)?\s*Buy\s+(\d+)\s+Hold\s+(\d+)\s+Sell\s+(\d+)/i
-        );
-        const analystCount = rMatch ? parseInt(rMatch[1], 10) : null;
-        let rating = rMatch && rMatch[2] ? rMatch[2].trim() : null;
-        if (rating) {
-          if (rating.toLowerCase() === 'strong buy') rating = 'Strong Buy';
-          else if (rating.toLowerCase() === 'strong sell') rating = 'Strong Sell';
-          else rating = rating.charAt(0).toUpperCase() + rating.slice(1).toLowerCase();
-        } else {
-          rating = upsidePercent >= 25 ? 'Strong Buy' : upsidePercent >= 5 ? 'Buy' : 'Hold';
-        }
-        const buyCount = rMatch ? parseInt(rMatch[3], 10) : null;
-        const holdCount = rMatch ? parseInt(rMatch[4], 10) : null;
-        const sellCount = rMatch ? parseInt(rMatch[5], 10) : null;
-
-        // Parse fundamentals from Google Finance stats section
-        const mcMatch = text.match(/Mkt\.\s*cap\s+([\d.,]+\s*[TBMK]?)/i);
-        const marketCap = mcMatch ? mcMatch[1].trim() + '$' : null;
-
-        const peMatch = text.match(/P\/E\s*ratio\s+([\d.,]+)/i);
-        const peRatio = peMatch ? parseFloat(peMatch[1].replace(/,/g, '')) : null;
-
-        const divMatch = text.match(/Dividend\s+([\d.]+)%/i);
-        const dividendYield = divMatch ? parseFloat(divMatch[1]) : 0;
-
-        const high52Match = text.match(/52-wk\s*high\s+[₪$€£]?([\d,.]+)/i);
-        const high52 = high52Match ? parseFloat(high52Match[1].replace(/,/g, '')) : null;
-        let distanceFrom52wHigh: string | null = null;
-        if (high52 && currentPrice && high52 > 0) {
-          const diffPct = Math.round(((currentPrice - high52) / high52) * 100);
-          distanceFrom52wHigh = diffPct >= -1 ? 'בשיא שנתי' : `${diffPct}% מהשיא`;
-        }
-
-        return {
-          symbol: clean,
-          exchange: ex,
-          url,
-          hasForecast: true,
-          currentPrice,
-          averageTargetPrice,
-          upsidePercent,
-          highTargetPrice,
-          lowTargetPrice,
-          rating,
-          analystCount,
-          buyCount,
-          holdCount,
-          sellCount,
-          marketCap,
-          peRatio,
-          dividendYield,
-          distanceFrom52wHigh,
-        };
-      } catch {
-        return null;
+  try {
+    const promises = ['NASDAQ', 'NYSE'].map(async (ex) => {
+      const res = await fetchGoogleFinanceForExchange(clean, ex, controller.signal);
+      if (res && res.hasForecast) {
+        controller.abort(); // Cancel the other exchange immediately
+        return res;
       }
-    })
-  );
+      return null;
+    });
 
-  const found = results.find((r) => r !== null) || null;
-  if (found) {
-    gfCache.set(clean, { data: found, expiresAt: Date.now() + 15 * 60 * 1000 });
+    const results = await Promise.allSettled(promises);
+    clearTimeout(timeoutId);
+
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value) {
+        gfCache.set(clean, { data: r.value, expiresAt: Date.now() + 15 * 60 * 1000 });
+        return r.value;
+      }
+    }
+
+    // Rare fallback: try NYSEAMERICAN
+    const amex = await fetchGoogleFinanceForExchange(clean, 'NYSEAMERICAN');
+    if (amex) {
+      gfCache.set(clean, { data: amex, expiresAt: Date.now() + 15 * 60 * 1000 });
+      return amex;
+    }
+  } catch {
+    clearTimeout(timeoutId);
   }
-  return found;
+
+  return null;
 }
 
 // Curated backup metadata for conservative / defensive / dividend stocks
@@ -618,7 +645,7 @@ CRITICAL: Return 8 candidate stocks in the stocks array so our live Google Finan
               responseMimeType: 'application/json',
             },
           }),
-          signal: AbortSignal.timeout(45000),
+          signal: AbortSignal.timeout(12000),
         }
       );
 
@@ -686,7 +713,7 @@ CRITICAL: Return 8 candidate stocks in the stocks array so our live Google Finan
           }
         }
 
-        const candidateList = Array.from(candidatesMap.values()).slice(0, 18);
+        const candidateList = Array.from(candidatesMap.values()).slice(0, 10);
 
         // Fetch 100% REAL LIVE Google Finance data for all candidates in parallel
         const verifiedCandidates = await Promise.all(

@@ -293,36 +293,78 @@ export default function Home() {
   const [projectionYears, setProjectionYears] = useState<Record<string, number | string>>({});
   const [projectionInvestments, setProjectionInvestments] = useState<Record<string, number | string>>({});
 
+  const [customFinderStatus, setCustomFinderStatus] = useState('');
+
   const handleRunCustomFinder = async () => {
     if (!customFinderQuery.trim() || customFinderLoading) return;
     setCustomFinderLoading(true);
     setCustomFinderError(null);
+    setCustomFinderStatus('Gemini מחפש מניות ומנתח תחזיות…');
 
-    try {
-      const res = await fetch('/api/ai-stock-finder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: customFinderQuery.trim(),
-          filters: {
-            risk: finderRisk,
-            budget: finderBudget,
-            dividend: finderDividend,
-            beat: finderBeat,
-          },
-          portfolio: portfolio.map(s => ({ symbol: s.symbol, name: s.name })),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        throw new Error(data.error || 'שגיאה באיתור המניות');
+    const maxAttempts = 3;
+    let lastErrorMsg = '';
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        if (attempt > 1) {
+          setCustomFinderStatus(`מאמת תחזיות מול Google Finance (ניסיון ${attempt} מתוך ${maxAttempts})…`);
+        }
+
+        const controller = new AbortController();
+        const timeoutDuration = attempt === 1 ? 25000 : 35000;
+        const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
+
+        const res = await fetch('/api/ai-stock-finder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: customFinderQuery.trim(),
+            filters: {
+              risk: finderRisk,
+              budget: finderBudget,
+              dividend: finderDividend,
+              beat: finderBeat,
+            },
+            portfolio: portfolio.map(s => ({ symbol: s.symbol, name: s.name })),
+          }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        let data: any = null;
+        try {
+          data = await res.json();
+        } catch {
+          throw new Error('תגובה לא תקינה מהשרת');
+        }
+
+        if (!res.ok || data.error) {
+          throw new Error(data.error || 'שגיאה באיתור המניות');
+        }
+
+        setCustomFinderResults(data);
+        setCustomFinderError(null);
+        setCustomFinderLoading(false);
+        setCustomFinderStatus('');
+        return; // Success!
+      } catch (err: any) {
+        console.warn(`AI Stock Finder attempt ${attempt} failed:`, err?.message || err);
+        lastErrorMsg = err?.message || 'שגיאת תקשורת';
+        if (attempt < maxAttempts) {
+          await new Promise(r => setTimeout(r, 600));
+        }
       }
-      setCustomFinderResults(data);
-    } catch (err: any) {
-      setCustomFinderError(err.message || 'שגיאה ברשת באיתור המניות. אנא נסה שוב.');
-    } finally {
-      setCustomFinderLoading(false);
     }
+
+    const friendlyMsg =
+      lastErrorMsg.includes('Load failed') || lastErrorMsg.includes('abort') || lastErrorMsg.includes('network') || lastErrorMsg.includes('תקשורת')
+        ? 'החיבור לשרת ארך מעט מהרגיל. אנא לחץ שוב על "חפש 3 מניות עם Gemini".'
+        : (lastErrorMsg || 'לא הצלחנו לאתר מניות כרגע. אנא נסה שוב.');
+
+    setCustomFinderError(friendlyMsg);
+    setCustomFinderLoading(false);
+    setCustomFinderStatus('');
   };
 
   // One-Click Portfolio Diagnosis (למה התיק שלי ירד / עלה היום?)
@@ -4061,7 +4103,7 @@ export default function Home() {
                 {customFinderLoading ? (
                   <>
                     <RefreshCw size={17} className="animate-spin" />
-                    <span>Gemini מחפש מניות ומנתח תחזיות…</span>
+                    <span>{customFinderStatus || 'Gemini מחפש מניות ומנתח תחזיות…'}</span>
                   </>
                 ) : (
                   <>
