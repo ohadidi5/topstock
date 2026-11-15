@@ -4491,7 +4491,7 @@ export default function Home() {
                                 ? year1Multiplier
                                 : (year1Multiplier * subsequentMultiplier);
 
-                              const totalProjReturn = Math.round((combinedMultiplier - 1) * 100);
+                              const totalProjReturn = (combinedMultiplier - 1) * 100;
                               const futurePrice = (st.currentPrice || 100) * combinedMultiplier;
                               const sample10k = 10000 * combinedMultiplier;
                               const sampleProfit = sample10k - 10000;
@@ -4602,7 +4602,7 @@ export default function Home() {
                                     <div>
                                       <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>תשואה מצטברת צפויה בעוד {effectiveYears} {effectiveYears === 1 ? 'שנה' : 'שנים'}:</div>
                                       <div style={{ fontSize: '1.05rem', fontWeight: 800, color: totalProjReturn >= 0 ? 'var(--profit-color)' : 'var(--loss-color)', direction: 'ltr', textAlign: 'right' }}>
-                                        {totalProjReturn >= 0 ? '+' : ''}{totalProjReturn.toLocaleString()}%
+                                        {totalProjReturn >= 0 ? '+' : ''}{totalProjReturn.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                                       </div>
                                     </div>
                                     <div>
