@@ -4490,6 +4490,40 @@ export default function Home() {
                           )}
                         </div>
 
+                        {/* Why Match Details */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '0.9rem', background: 'rgba(0, 0, 0, 0.2)', padding: '0.85rem', borderRadius: '10px' }}>
+                          <div>
+                            <span style={{ fontWeight: 700, fontSize: '0.86rem', color: '#93c5fd' }}>
+                              למה מתאימה לבקשתך:
+                            </span>{' '}
+                            <span style={{ fontSize: '0.92rem', color: 'var(--text-main)', lineHeight: 1.5 }}>
+                              {st.whyMatch}
+                            </span>
+                          </div>
+
+                          {st.earningsBeat && (
+                            <div>
+                              <span style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--profit-color)' }}>
+                                ביצועי דוחות והפתעות:
+                              </span>{' '}
+                              <span style={{ fontSize: '0.92rem', color: 'var(--text-main)', lineHeight: 1.5 }}>
+                                {st.earningsBeat}
+                              </span>
+                            </div>
+                          )}
+
+                          {st.catalyst && (
+                            <div>
+                              <span style={{ fontWeight: 700, fontSize: '0.86rem', color: '#fbbf24' }}>
+                                זרז מרכזי לעלייה:
+                              </span>{' '}
+                              <span style={{ fontSize: '0.92rem', color: 'var(--text-main)', lineHeight: 1.5 }}>
+                                {st.catalyst}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
                         {/* Interactive Future Return Calculator (מחשבון תשואה היסטורית לעוד X שנים) */}
                         {st.historical20Year && (
                           <div
@@ -4778,40 +4812,6 @@ export default function Home() {
                             })()}
                           </div>
                         )}
-
-                        {/* Why Match Details */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '1rem', background: 'rgba(0, 0, 0, 0.2)', padding: '0.85rem', borderRadius: '10px' }}>
-                          <div>
-                            <span style={{ fontWeight: 700, fontSize: '0.86rem', color: '#93c5fd' }}>
-                              למה מתאימה לבקשתך:
-                            </span>{' '}
-                            <span style={{ fontSize: '0.92rem', color: 'var(--text-main)', lineHeight: 1.5 }}>
-                              {st.whyMatch}
-                            </span>
-                          </div>
-
-                          {st.earningsBeat && (
-                            <div>
-                              <span style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--profit-color)' }}>
-                                ביצועי דוחות והפתעות:
-                              </span>{' '}
-                              <span style={{ fontSize: '0.92rem', color: 'var(--text-main)', lineHeight: 1.5 }}>
-                                {st.earningsBeat}
-                              </span>
-                            </div>
-                          )}
-
-                          {st.catalyst && (
-                            <div>
-                              <span style={{ fontWeight: 700, fontSize: '0.86rem', color: '#fbbf24' }}>
-                                זרז מרכזי לעלייה:
-                              </span>{' '}
-                              <span style={{ fontSize: '0.92rem', color: 'var(--text-main)', lineHeight: 1.5 }}>
-                                {st.catalyst}
-                              </span>
-                            </div>
-                          )}
-                        </div>
 
                         {/* Stock Actions */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
