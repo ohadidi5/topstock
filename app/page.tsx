@@ -290,7 +290,7 @@ export default function Home() {
   const [finderDividend, setFinderDividend] = useState<'all' | 'dividendOnly'>('all');
   const [finderBeat, setFinderBeat] = useState<'all' | 'beatOnly'>('all');
   const [showComparisonMatrix, setShowComparisonMatrix] = useState(true);
-  const [projectionYears, setProjectionYears] = useState<Record<string, number>>({});
+  const [projectionYears, setProjectionYears] = useState<Record<string, number | string>>({});
 
   const handleRunCustomFinder = async () => {
     if (!customFinderQuery.trim() || customFinderLoading) return;
@@ -4470,11 +4470,15 @@ export default function Home() {
 
                             {/* Year selector buttons */}
                             {(() => {
-                              const selectedY = projectionYears[st.symbol] !== undefined ? projectionYears[st.symbol] : 10;
+                              const rawVal = projectionYears[st.symbol];
+                              const parsedYears = typeof rawVal === 'number' ? rawVal : (rawVal !== undefined && rawVal !== '' ? parseInt(String(rawVal), 10) : NaN);
+                              const effectiveYears = !isNaN(parsedYears) && parsedYears > 0 ? parsedYears : 10;
+                              const inputValue = rawVal !== undefined ? rawVal : 10;
+
                               const cagrRate = st.historical20Year.cagrPercent / 100;
-                              const totalProjReturn = Math.round((Math.pow(1 + cagrRate, selectedY) - 1) * 100);
-                              const futurePrice = (st.currentPrice || 100) * Math.pow(1 + cagrRate, selectedY);
-                              const sample10k = 10000 * Math.pow(1 + cagrRate, selectedY);
+                              const totalProjReturn = Math.round((Math.pow(1 + cagrRate, effectiveYears) - 1) * 100);
+                              const futurePrice = (st.currentPrice || 100) * Math.pow(1 + cagrRate, effectiveYears);
+                              const sample10k = 10000 * Math.pow(1 + cagrRate, effectiveYears);
                               const sampleProfit = sample10k - 10000;
 
                               return (
@@ -4493,36 +4497,49 @@ export default function Home() {
                                           fontWeight: 700,
                                           cursor: 'pointer',
                                           transition: 'all 0.15s ease',
-                                          background: selectedY === yr ? 'var(--profit-color)' : 'rgba(255, 255, 255, 0.06)',
-                                          border: selectedY === yr ? '1px solid var(--profit-color)' : '1px solid var(--border-color)',
-                                          color: selectedY === yr ? '#000' : 'var(--text-main)',
+                                          background: effectiveYears === yr ? 'var(--profit-color)' : 'rgba(255, 255, 255, 0.06)',
+                                          border: effectiveYears === yr ? '1px solid var(--profit-color)' : '1px solid var(--border-color)',
+                                          color: effectiveYears === yr ? '#000' : 'var(--text-main)',
                                         }}
                                       >
                                         {yr} שנים
                                       </button>
                                     ))}
-                                    {/* Custom slider / input */}
+                                    {/* Custom input with full deletion and typing freedom */}
                                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', marginLeft: 'auto' }}>
                                       <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>מותאם:</span>
                                       <input
                                         type="number"
                                         min={1}
-                                        max={30}
-                                        value={selectedY}
+                                        max={100}
+                                        placeholder="10"
+                                        value={inputValue}
                                         onChange={(e) => {
-                                          const val = parseInt(e.target.value, 10);
-                                          if (!isNaN(val) && val >= 1 && val <= 50) {
-                                            setProjectionYears(prev => ({ ...prev, [st.symbol]: val }));
+                                          const valStr = e.target.value;
+                                          if (valStr === '') {
+                                            setProjectionYears(prev => ({ ...prev, [st.symbol]: '' }));
+                                            return;
+                                          }
+                                          const num = parseInt(valStr, 10);
+                                          if (!isNaN(num)) {
+                                            setProjectionYears(prev => ({ ...prev, [st.symbol]: num }));
+                                          }
+                                        }}
+                                        onBlur={() => {
+                                          const current = projectionYears[st.symbol];
+                                          if (current === '' || current === undefined || isNaN(Number(current)) || Number(current) <= 0) {
+                                            setProjectionYears(prev => ({ ...prev, [st.symbol]: 10 }));
                                           }
                                         }}
                                         style={{
-                                          width: '45px',
-                                          padding: '0.2rem 0.35rem',
-                                          borderRadius: '5px',
-                                          background: 'rgba(0,0,0,0.3)',
-                                          border: '1px solid var(--border-color)',
-                                          color: 'var(--text-main)',
-                                          fontSize: '0.78rem',
+                                          width: '52px',
+                                          padding: '0.25rem 0.4rem',
+                                          borderRadius: '6px',
+                                          background: 'rgba(0,0,0,0.35)',
+                                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                                          color: '#fff',
+                                          fontSize: '0.82rem',
+                                          fontWeight: 700,
                                           textAlign: 'center',
                                         }}
                                       />
@@ -4543,7 +4560,7 @@ export default function Home() {
                                     }}
                                   >
                                     <div>
-                                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>תשואה מצטברת צפויה בעוד {selectedY} שנים:</div>
+                                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>תשואה מצטברת צפויה בעוד {effectiveYears} שנים:</div>
                                       <div style={{ fontSize: '1.05rem', fontWeight: 800, color: totalProjReturn >= 0 ? 'var(--profit-color)' : 'var(--loss-color)', direction: 'ltr', textAlign: 'right' }}>
                                         {totalProjReturn >= 0 ? '+' : ''}{totalProjReturn.toLocaleString()}%
                                       </div>
