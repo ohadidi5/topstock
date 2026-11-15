@@ -14,6 +14,83 @@ interface CachedFinderResult {
 }
 const finderCache = new Map<string, CachedFinderResult>();
 
+// In-memory cache for 20-year historical return data (1 day TTL)
+interface HistoricalReturnData {
+  years: number;
+  cagrPercent: number; // average annual compound return, e.g. 14.2%
+  totalReturnPercent: number;
+  startYear: number;
+  endYear: number;
+  startPrice: number;
+  endPrice: number;
+}
+const historyCache = new Map<string, { data: HistoricalReturnData | null; expiresAt: number }>();
+
+async function fetchHistorical20YearReturn(symbol: string): Promise<HistoricalReturnData | null> {
+  const clean = symbol.replace(/\.TA$/i, '').toUpperCase().trim();
+  const cached = historyCache.get(clean);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.data;
+  }
+
+  try {
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(clean)}?range=20y&interval=1mo`,
+      {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        signal: AbortSignal.timeout(6000),
+      }
+    );
+    if (!res.ok) {
+      historyCache.set(clean, { data: null, expiresAt: Date.now() + 3600 * 1000 });
+      return null;
+    }
+    const json = await res.json();
+    const result = json?.chart?.result?.[0];
+    const timestamps = result?.timestamp || [];
+    const closes: number[] = (result?.indicators?.quote?.[0]?.close || []).filter(
+      (c: any): c is number => typeof c === 'number' && !isNaN(c) && c > 0
+    );
+
+    if (closes.length < 12 || timestamps.length < 12) {
+      historyCache.set(clean, { data: null, expiresAt: Date.now() + 3600 * 1000 });
+      return null;
+    }
+
+    const firstPrice = closes[0];
+    const lastPrice = closes[closes.length - 1];
+    const firstTs = timestamps[0];
+    const lastTs = timestamps[timestamps.length - 1];
+    const years = Math.max(1, Math.round(((lastTs - firstTs) / (365.25 * 24 * 3600)) * 10) / 10);
+    const startYear = new Date(firstTs * 1000).getFullYear();
+    const endYear = new Date(lastTs * 1000).getFullYear();
+
+    const totalReturnPercent = Math.round(((lastPrice - firstPrice) / firstPrice) * 10000) / 100;
+    // Compound Annual Growth Rate: (End / Start) ^ (1 / years) - 1
+    const cagrRaw = (Math.pow(lastPrice / firstPrice, 1 / years) - 1) * 100;
+    const cagrPercent = Math.round(cagrRaw * 100) / 100;
+
+    const data: HistoricalReturnData = {
+      years,
+      cagrPercent,
+      totalReturnPercent,
+      startYear,
+      endYear,
+      startPrice: Math.round(firstPrice * 100) / 100,
+      endPrice: Math.round(lastPrice * 100) / 100,
+    };
+
+    historyCache.set(clean, { data, expiresAt: Date.now() + 24 * 3600 * 1000 });
+    return data;
+  } catch {
+    historyCache.set(clean, { data: null, expiresAt: Date.now() + 3600 * 1000 });
+    return null;
+  }
+}
+
 // In-memory cache for live Google Finance quote & forecast (15 min TTL)
 interface GoogleFinanceLiveData {
   symbol: string;
@@ -696,18 +773,21 @@ CRITICAL: Return 8 candidate stocks in the stocks array so our live Google Finan
 
         const top3 = matching.slice(0, 3);
 
-        // Enrich with daily change from Finnhub if available, but keep currentPrice, targetPrice, and upsidePercent 100% IDENTICAL to Google Finance!
+        // Enrich with daily change from Finnhub & 20-Year historical average annual return (CAGR)
         const enrichedStocks = await Promise.all(
           top3.map(async ({ st, gf }) => {
             let dailyChange = 0;
             let dailyPercent = 0;
 
-            try {
-              const qRes = await fetch(
+            const [qRes, histData] = await Promise.all([
+              fetch(
                 `https://finnhub.io/api/v1/quote?symbol=${gf.symbol}&token=${FINNHUB_API_KEY}`,
                 { signal: AbortSignal.timeout(3000) }
-              ).catch(() => null);
+              ).catch(() => null),
+              fetchHistorical20YearReturn(gf.symbol),
+            ]);
 
+            try {
               if (qRes && qRes.ok) {
                 const qData = await qRes.json();
                 if (typeof qData.d === 'number') dailyChange = qData.d;
@@ -715,7 +795,7 @@ CRITICAL: Return 8 candidate stocks in the stocks array so our live Google Finan
               }
             } catch {}
 
-            // 100% verbatim numbers from Google Finance — zero modification!
+            // 100% verbatim numbers from Google Finance & 20-Year Annualized Return CAGR
             return {
               symbol: gf.symbol,
               name: st.name || gf.symbol,
@@ -745,6 +825,7 @@ CRITICAL: Return 8 candidate stocks in the stocks array so our live Google Finan
               googleFinanceUrl: gf.url,
               primarySource: 'Google Finance',
               forecastSource: 'Google Finance בלבד',
+              historical20Year: histData || null,
             };
           })
         );

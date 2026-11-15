@@ -290,6 +290,7 @@ export default function Home() {
   const [finderDividend, setFinderDividend] = useState<'all' | 'dividendOnly'>('all');
   const [finderBeat, setFinderBeat] = useState<'all' | 'beatOnly'>('all');
   const [showComparisonMatrix, setShowComparisonMatrix] = useState(true);
+  const [projectionYears, setProjectionYears] = useState<Record<string, number>>({});
 
   const handleRunCustomFinder = async () => {
     if (!customFinderQuery.trim() || customFinderLoading) return;
@@ -4421,6 +4422,11 @@ export default function Home() {
                           <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.55rem', borderRadius: '6px', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.35)', color: '#93c5fd' }}>
                             תחזית: <strong style={{ color: '#60a5fa' }}>Google Finance בלבד</strong>
                           </span>
+                          {st.historical20Year && (
+                            <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.55rem', borderRadius: '6px', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.35)', color: 'var(--profit-color)' }}>
+                              📊 ממוצע ב-{Math.round(st.historical20Year.years)} השנים האחרונות: <strong style={{ color: '#34d399' }}>{st.historical20Year.cagrPercent >= 0 ? '+' : ''}{st.historical20Year.cagrPercent}% לשנה</strong>
+                            </span>
+                          )}
                           {st.peRatio && (
                             <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.55rem', borderRadius: '6px', background: 'rgba(255, 255, 255, 0.04)', border: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
                               📊 מכפיל P/E: <strong style={{ color: 'var(--text-main)' }}>{st.peRatio}</strong>
@@ -4440,6 +4446,126 @@ export default function Home() {
                             </span>
                           )}
                         </div>
+
+                        {/* Interactive Future Return Calculator (מחשבון תשואה היסטורית לעוד X שנים) */}
+                        {st.historical20Year && (
+                          <div
+                            style={{
+                              padding: '0.85rem 1rem',
+                              borderRadius: '10px',
+                              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(59, 130, 246, 0.08))',
+                              border: '1px solid rgba(16, 185, 129, 0.3)',
+                              marginBottom: '0.9rem',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.55rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.86rem', fontWeight: 700, color: '#34d399' }}>
+                                <TrendingUp size={16} />
+                                <span>מחשבון תשואה לפי ממוצע 20 שנה ({st.historical20Year.cagrPercent >= 0 ? '+' : ''}{st.historical20Year.cagrPercent}% לשנה):</span>
+                              </div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                ({st.historical20Year.startYear} – {st.historical20Year.endYear})
+                              </div>
+                            </div>
+
+                            {/* Year selector buttons */}
+                            {(() => {
+                              const selectedY = projectionYears[st.symbol] !== undefined ? projectionYears[st.symbol] : 10;
+                              const cagrRate = st.historical20Year.cagrPercent / 100;
+                              const totalProjReturn = Math.round((Math.pow(1 + cagrRate, selectedY) - 1) * 100);
+                              const futurePrice = (st.currentPrice || 100) * Math.pow(1 + cagrRate, selectedY);
+                              const sample10k = 10000 * Math.pow(1 + cagrRate, selectedY);
+                              const sampleProfit = sample10k - 10000;
+
+                              return (
+                                <div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.65rem' }}>
+                                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>בחר טווח שנים:</span>
+                                    {[3, 5, 10, 15, 20].map((yr) => (
+                                      <button
+                                        key={yr}
+                                        type="button"
+                                        onClick={() => setProjectionYears(prev => ({ ...prev, [st.symbol]: yr }))}
+                                        style={{
+                                          padding: '0.25rem 0.6rem',
+                                          borderRadius: '6px',
+                                          fontSize: '0.78rem',
+                                          fontWeight: 700,
+                                          cursor: 'pointer',
+                                          transition: 'all 0.15s ease',
+                                          background: selectedY === yr ? 'var(--profit-color)' : 'rgba(255, 255, 255, 0.06)',
+                                          border: selectedY === yr ? '1px solid var(--profit-color)' : '1px solid var(--border-color)',
+                                          color: selectedY === yr ? '#000' : 'var(--text-main)',
+                                        }}
+                                      >
+                                        {yr} שנים
+                                      </button>
+                                    ))}
+                                    {/* Custom slider / input */}
+                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', marginLeft: 'auto' }}>
+                                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>מותאם:</span>
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        max={30}
+                                        value={selectedY}
+                                        onChange={(e) => {
+                                          const val = parseInt(e.target.value, 10);
+                                          if (!isNaN(val) && val >= 1 && val <= 50) {
+                                            setProjectionYears(prev => ({ ...prev, [st.symbol]: val }));
+                                          }
+                                        }}
+                                        style={{
+                                          width: '45px',
+                                          padding: '0.2rem 0.35rem',
+                                          borderRadius: '5px',
+                                          background: 'rgba(0,0,0,0.3)',
+                                          border: '1px solid var(--border-color)',
+                                          color: 'var(--text-main)',
+                                          fontSize: '0.78rem',
+                                          textAlign: 'center',
+                                        }}
+                                      />
+                                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>שנים</span>
+                                    </div>
+                                  </div>
+
+                                  {/* Result display */}
+                                  <div
+                                    style={{
+                                      display: 'grid',
+                                      gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                                      gap: '0.5rem',
+                                      background: 'rgba(0, 0, 0, 0.25)',
+                                      padding: '0.65rem 0.85rem',
+                                      borderRadius: '8px',
+                                      border: '1px solid rgba(255, 255, 255, 0.05)',
+                                    }}
+                                  >
+                                    <div>
+                                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>תשואה מצטברת צפויה בעוד {selectedY} שנים:</div>
+                                      <div style={{ fontSize: '1.05rem', fontWeight: 800, color: totalProjReturn >= 0 ? 'var(--profit-color)' : 'var(--loss-color)', direction: 'ltr', textAlign: 'right' }}>
+                                        {totalProjReturn >= 0 ? '+' : ''}{totalProjReturn.toLocaleString()}%
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>מחיר מניה חזוי (מ-{money(st.currentPrice)}):</div>
+                                      <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#60a5fa', direction: 'ltr', textAlign: 'right' }}>
+                                        {money(futurePrice)}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>השקעה של $10,000 תהיה שווה:</div>
+                                      <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fbbf24', direction: 'ltr', textAlign: 'right' }}>
+                                        ${Math.round(sample10k).toLocaleString()} <span style={{ fontSize: '0.75rem', color: 'var(--profit-color)' }}>(+${Math.round(sampleProfit).toLocaleString()})</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        )}
 
                         {/* Why Match Details */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '1rem', background: 'rgba(0, 0, 0, 0.2)', padding: '0.85rem', borderRadius: '10px' }}>
