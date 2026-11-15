@@ -4475,17 +4475,32 @@ export default function Home() {
                               const effectiveYears = !isNaN(parsedYears) && parsedYears > 0 ? parsedYears : 10;
                               const inputValue = rawVal !== undefined ? rawVal : 10;
 
+                              // Year 1 Return: 100% based on Google Finance Analyst 12-Month Target Forecast
+                              const year1UpsidePercent = typeof st.upsidePercent === 'number' && !isNaN(st.upsidePercent)
+                                ? st.upsidePercent
+                                : st.historical20Year.cagrPercent;
+                              const year1Multiplier = 1 + (year1UpsidePercent / 100);
+
+                              // Subsequent Years Return: based on 20-Year Historical Annual Average (CAGR)
+                              const subsequentYears = Math.max(0, effectiveYears - 1);
                               const cagrRate = st.historical20Year.cagrPercent / 100;
-                              const totalProjReturn = Math.round((Math.pow(1 + cagrRate, effectiveYears) - 1) * 100);
-                              const futurePrice = (st.currentPrice || 100) * Math.pow(1 + cagrRate, effectiveYears);
-                              const sample10k = 10000 * Math.pow(1 + cagrRate, effectiveYears);
+                              const subsequentMultiplier = Math.pow(1 + cagrRate, subsequentYears);
+
+                              // Combined Multiplier: (Year 1 Analyst Forecast) * (Subsequent Years Historical Average)
+                              const combinedMultiplier = effectiveYears === 1
+                                ? year1Multiplier
+                                : (year1Multiplier * subsequentMultiplier);
+
+                              const totalProjReturn = Math.round((combinedMultiplier - 1) * 100);
+                              const futurePrice = (st.currentPrice || 100) * combinedMultiplier;
+                              const sample10k = 10000 * combinedMultiplier;
                               const sampleProfit = sample10k - 10000;
 
                               return (
                                 <div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.65rem' }}>
                                     <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>בחר טווח שנים:</span>
-                                    {[3, 5, 10, 15, 20].map((yr) => (
+                                    {[1, 3, 5, 10, 15, 20].map((yr) => (
                                       <button
                                         key={yr}
                                         type="button"
@@ -4502,7 +4517,7 @@ export default function Home() {
                                           color: effectiveYears === yr ? '#000' : 'var(--text-main)',
                                         }}
                                       >
-                                        {yr} שנים
+                                        {yr} {yr === 1 ? 'שנה' : 'שנים'}
                                       </button>
                                     ))}
                                     {/* Custom input with full deletion and typing freedom */}
@@ -4516,7 +4531,6 @@ export default function Home() {
                                         dir="ltr"
                                         value={inputValue}
                                         onFocus={(e) => {
-                                          // Automatically select the text on focus so typing replaces it or Backspace immediately deletes it
                                           e.target.select();
                                         }}
                                         onClick={(e) => {
@@ -4543,7 +4557,6 @@ export default function Home() {
                                           if (current === '' || current === undefined || isNaN(Number(current)) || Number(current) <= 0) {
                                             setProjectionYears(prev => ({ ...prev, [st.symbol]: 10 }));
                                           }
-                                          // Auto zoom-out / reset viewport scroll when finished typing
                                           if (typeof window !== 'undefined') {
                                             window.scrollTo({ left: 0, behavior: 'smooth' });
                                           }
@@ -4555,7 +4568,7 @@ export default function Home() {
                                           background: 'rgba(0,0,0,0.35)',
                                           border: '1px solid rgba(255, 255, 255, 0.2)',
                                           color: '#fff',
-                                          fontSize: '16px', // 16px prevents iOS/Android safari from zooming in automatically
+                                          fontSize: '16px',
                                           fontWeight: 700,
                                           textAlign: 'center',
                                           direction: 'ltr',
@@ -4564,6 +4577,14 @@ export default function Home() {
                                       />
                                       <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>שנים</span>
                                     </div>
+                                  </div>
+
+                                  {/* Breakdown legend */}
+                                  <div style={{ fontSize: '0.74rem', color: '#93c5fd', marginBottom: '0.55rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                    <span>🎯 שנה 1 (תחזית אנליסטים Google Finance): <strong style={{ color: (st.upsidePercent || 0) >= 0 ? 'var(--profit-color)' : 'var(--loss-color)' }}>{(st.upsidePercent || 0) >= 0 ? '+' : ''}{st.upsidePercent}%</strong></span>
+                                    {effectiveYears > 1 && (
+                                      <span>📈 {effectiveYears - 1} השנים הבאות (ממוצע 20 שנה): <strong style={{ color: '#34d399' }}>{st.historical20Year.cagrPercent >= 0 ? '+' : ''}{st.historical20Year.cagrPercent}% לשנה</strong></span>
+                                    )}
                                   </div>
 
                                   {/* Result display */}
@@ -4579,7 +4600,7 @@ export default function Home() {
                                     }}
                                   >
                                     <div>
-                                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>תשואה מצטברת צפויה בעוד {effectiveYears} שנים:</div>
+                                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>תשואה מצטברת צפויה בעוד {effectiveYears} {effectiveYears === 1 ? 'שנה' : 'שנים'}:</div>
                                       <div style={{ fontSize: '1.05rem', fontWeight: 800, color: totalProjReturn >= 0 ? 'var(--profit-color)' : 'var(--loss-color)', direction: 'ltr', textAlign: 'right' }}>
                                         {totalProjReturn >= 0 ? '+' : ''}{totalProjReturn.toLocaleString()}%
                                       </div>
