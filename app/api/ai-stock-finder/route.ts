@@ -146,6 +146,77 @@ export async function fetchGoogleFinanceLive(symbol: string): Promise<GoogleFina
   return found;
 }
 
+// Curated backup metadata for conservative / defensive / dividend stocks
+const CONSERVATIVE_FALLBACK_METADATA: Record<
+  string,
+  { name: string; sector: string; whyMatch: string; earningsBeat: string; catalyst: string; portfolioFitReason: string }
+> = {
+  JNJ: {
+    name: 'Johnson & Johnson',
+    sector: 'בריאות, פארמה ומכשור רפואי',
+    whyMatch: 'ענקית בריאות דפנסיבית מהמובילות בעולם, בעלת מאזן פיננסי בדירוג AAA, תזרים יציב ומדיניות דיבידנד עקבית.',
+    earningsBeat: 'הציגה תוצאות רבעוניות איתנות עם צמיחה עקבית בחטיבת התרופות ומכשור רפואי.',
+    catalyst: 'צבר תרופות מתקדם באונקולוגיה ואימונולוגיה והתרחבות טכנולוגיות ניתוח מתקדמות.',
+    portfolioFitReason: 'עוגן הגנתי קלאסי המעניק ביטחון מירבי ותנודתיות נמוכה לתיק ההשקעות.',
+  },
+  PG: {
+    name: 'Procter & Gamble Company',
+    sector: 'צריכה בסיסית ומוצרי צריכה',
+    whyMatch: 'מובילה עולמית של מותגי צריכה חיוניים עם כוח תמחור יוצא דופן, עמידות מלאה במיתון ודיבידנד אמין.',
+    earningsBeat: 'עקפה את תחזיות הרווח בזכות יציבות בנפחי המכירות ושיפור במרווחי הרווח הגולמי.',
+    catalyst: 'העלאות מחיר מבוקרות וחיסכון תפעולי המייצרים תזרים מזומנים חופשי עקבי.',
+    portfolioFitReason: 'מניה דפנסיבית מהמעלה הראשונה השומרת על ערך התיק גם בתקופות אי-ודאות בשווקים.',
+  },
+  KO: {
+    name: 'The Coca-Cola Company',
+    sector: 'מזון ומשקאות (צריכה בסיסית)',
+    whyMatch: 'מותג המשקאות החזק בעולם עם פיזור גלובלי רחב, תזרים עמיד לאינפלציה ורצף ארוך שנים של העלאת דיבידנד.',
+    earningsBeat: 'הכתה את תחזיות ההכנסות והרווח הודות לעלייה בצריכה במשווקים מתעוררים ובאירופה.',
+    catalyst: 'חדשנות במוצרי שתייה ללא סוכר וקפה מוכן וצמיחה מתמשכת באירועי בידור והסעדה.',
+    portfolioFitReason: 'נכס בטוח ויציב המניב הכנסה שוטפת ודיבידנד בטוח ללא תנודות חדות.',
+  },
+  PEP: {
+    name: 'PepsiCo, Inc.',
+    sector: 'מזון, חטיפים ומשקאות',
+    whyMatch: 'שילוב מושלם של חטיפי Frito-Lay ומשקאות בינלאומיים, המעניק חסינות תזרימית יוצאת דופן ודיבידנד מעל 3.5%.',
+    earningsBeat: 'שמרה על רווחיות איתנה בשווקים הבינלאומיים למרות לחצי אינפלציה.',
+    catalyst: 'התייעלות בשרשרת האספקה וצמיחה מהירה של מותגי חטיפים בריאים יותר.',
+    portfolioFitReason: 'מניית ערך יציבה המציעה תשואת דיבידנד גבוהה ושמירה על ערך ההון.',
+  },
+  MCD: {
+    name: 'McDonald\'s Corporation',
+    sector: 'מזון מהיר ונדל"ן מסחרי',
+    whyMatch: 'מודל עסקי ייחודי המבוסס על זיכיונות ונדל"ן מניב המספק עמידות כלכלית יוצאת דופן בכל מצב שוק.',
+    earningsBeat: 'עמדה בתחזיות הרווח הודות לתוכניות נאמנות דיגיטליות ומבצעי ערך לצרכן.',
+    catalyst: 'התרחבות סניפים מואצת ברחבי העולם וחיזוק מועדון הלקוחות הדיגיטלי.',
+    portfolioFitReason: 'מעניקה יציבות ומזומנים חופשיים מתמשכים עם סיכון תנודתיות נמוך במיוחד.',
+  },
+  ABBV: {
+    name: 'AbbVie Inc.',
+    sector: 'ביופארמה ובריאות',
+    whyMatch: 'ענקית תרופות רווחית ביותר עם צמיחה חזקה בתרופות הדור החדש ותשואת דיבידנד גבוהה ובטוחה.',
+    earningsBeat: 'הציגה הכנסות שיא מתרופות Skyrizi ו-Rinvoq שפיצו בהצלחה על תפוגת פטנט היומירה.',
+    catalyst: 'הרחבת אינדיקציות קליניות לתרופות הדגל ורכישות אסטרטגיות בתחום האונקולוגיה.',
+    portfolioFitReason: 'משלבת יציבות של סקטור הבריאות עם דיבידנד שמן ואפסייד סולידי ב-Google Finance.',
+  },
+  CVX: {
+    name: 'Chevron Corporation',
+    sector: 'אנרגיה ותשתיות נפט וגז',
+    whyMatch: 'ענקית אנרגיה בעלת מאזן איתן ביותר, עלויות הפקה מהנמוכות בתעשייה ומדיניות חלוקת דיבידנד אמינה.',
+    earningsBeat: 'ייצרה תזרים מזומנים חופשי חזק לצד רכישות עצמיות של מניות והחזר הון למשקיעים.',
+    catalyst: 'השלמת פרויקטים גדולים באגן הפרמי ומפרץ מקסיקו המגדילים את התפוקה ביעילות.',
+    portfolioFitReason: 'הגנה מצוינת מפני אינפלציה ועוגן דיבידנד מוצק עם מכפיל רווח נוח.',
+  },
+  NEE: {
+    name: 'NextEra Energy, Inc.',
+    sector: 'תשתיות אנרגיה וחשמל ירוק',
+    whyMatch: 'חברת החשמל המוסדרת הגדולה בארה"ב לצד מובילות בייצור אנרגיה מתחדשת, המספקת הכנסה צפויה ומבוקרת.',
+    earningsBeat: 'עמדה בעקביות ביעדי הרווח השנתיים בזכות צמיחה אורגנית של פלורידה פאוור אנד לייט.',
+    catalyst: 'ביקוש חסר תקדים לחשמל עבור מרכזי נתונים וחוות שרתים התומכים בבינה מלאכותית.',
+    portfolioFitReason: 'סקטור תשתיות קלאסי ומפוקח עם סיכון נמוך וצמיחת דיבידנד סדירה.',
+  },
+};
+
 // Curated backup metadata for high-upside stocks in case Gemini's initial candidates don't meet strict live Google Finance thresholds
 const HIGH_UPSIDE_FALLBACK_METADATA: Record<
   string,
@@ -352,9 +423,18 @@ async function handleAiStockFinder(
 
   const { minUpside, minDividend } = extractNumericConstraints(query);
 
+  // Detect explicit user risk intent from the query text or filters
+  const lowerQuery = query.toLowerCase();
+  const isExplicitConservative =
+    filters?.risk === 'conservative' ||
+    /(?:שמרני|שמרנית|סולידי|סולידית|דפנסיבי|דפנסיבית|הגנתי|הגנתית|בטוח|בטוחה|ערך|דיבידנד יציב|ללא סיכון|סיכון נמוך|עוגן)/i.test(lowerQuery);
+  const isExplicitAggressive =
+    filters?.risk === 'aggressive' ||
+    /(?:אגרסיבי|אגרסיבית|מומנטום|צמיחה מהירה|סיכון גבוה|ספקולטיבי|ספקולטיבית|תנודתי)/i.test(lowerQuery);
+
   // Create composite cache key
   const portKey = userPortfolio.map((s) => s.symbol).sort().join(',');
-  const cacheKey = `v2_gf_${query.toLowerCase().trim()}_${filters?.risk || 'all'}_${filters?.budget || 'all'}_${filters?.dividend || 'all'}_${filters?.beat || 'all'}_${portKey}`;
+  const cacheKey = `v3_gf_${lowerQuery.trim()}_${filters?.risk || 'all'}_${filters?.budget || 'all'}_${filters?.dividend || 'all'}_${filters?.beat || 'all'}_${portKey}`;
   const cached = finderCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     const cacheValid = !minUpside || (Array.isArray(cached.data?.stocks) && cached.data.stocks.every((s: any) => (s.upsidePercent || 0) >= minUpside));
@@ -367,12 +447,17 @@ async function handleAiStockFinder(
 
   // Build filter directives
   const filterLines: string[] = [];
-  if (filters?.risk === 'conservative') {
-    filterLines.push('- RISK LEVEL: Strictly CONSERVATIVE / Defensive / Value stocks with strong balance sheets, predictable cash flows and lower volatility.');
+  if (isExplicitConservative) {
+    filterLines.push(
+      '*** STRICT MANDATORY RISK LEVEL - CONSERVATIVE / DEFENSIVE / VALUE ***:\n' +
+        '- The client explicitly requires CONSERVATIVE, DEFENSIVE, LOW-BETA, or VALUE stocks.\n' +
+        '- Select ONLY rock-solid companies with proven balance sheets, essential consumer/healthcare/utilities/energy demand, stable cash flow, low volatility, or strong dividend track records (e.g., JNJ, PG, KO, PEP, MCD, ABBV, CVX, NEE, SO, DUK, UNH, MRK, CL, WM).\n' +
+        '- STRICTLY FORBIDDEN: Do NOT select high-beta speculative tech, volatile AI momentum stocks, high-multiple chip stocks, or unprofitable companies (DO NOT provide PLTR, SOFI, SNOW, COIN, MDB, etc.).'
+    );
+  } else if (isExplicitAggressive) {
+    filterLines.push('- RISK LEVEL: AGGRESSIVE high-momentum growth stocks with substantial upside catalysts.');
   } else if (filters?.risk === 'balanced') {
     filterLines.push('- RISK LEVEL: BALANCED growth stocks with solid market leadership and healthy margins.');
-  } else if (filters?.risk === 'aggressive') {
-    filterLines.push('- RISK LEVEL: AGGRESSIVE high-momentum growth stocks with substantial upside catalysts.');
   }
 
   if (filters?.budget === 'under50') {
@@ -395,7 +480,7 @@ async function handleAiStockFinder(
     filterLines.push(
       `*** CRITICAL REQUIREMENT - MINIMUM ANALYST UPSIDE TARGET (${minUpside}%+) ***:\n` +
         `- The user demands stocks that currently have AT LEAST ${minUpside}% analyst upside on Google Finance.\n` +
-        `- Prioritize selecting candidates from stocks verified to have high analyst upside on Google Finance (such as: MU, MRVL, BABA, SE, NOW, VRT, COIN, NVDA, SNOW, DDOG, AVGO, VST, UBER, MELI, NU, MDB, NFLX, PLTR, GOOGL, META, SOFI, CRM, PANW, ZS, CEG, SHOP) that also match the user's topic.`
+        `- Prioritize selecting candidates verified to have high analyst upside on Google Finance that also strictly match the user's risk level.`
     );
   }
 
@@ -417,7 +502,8 @@ ${filterLines.length > 0 ? `ACTIVE CLIENT FILTERS & MANDATORY REQUIREMENTS:\n${f
 ${portfolioSummary}
 
 CRITICAL MANDATE:
-- Provide 8 candidate US-listed stocks (NASDAQ or NYSE tickers only, e.g. NVDA, MSFT, GOOGL, AMZN, META, AVGO, UBER, NOW, JNJ, XOM, etc.) ordered from best match to good match.
+- Provide 8 candidate US-listed stocks (NASDAQ or NYSE tickers only) that STRICTLY adhere to the client's risk profile and request topic.
+- Ordered from best match to good match.
 - Our server will immediately fetch the live Google Finance 12-month forecast page for your candidates and select the top 3 whose live Google Finance numbers strictly pass all filters.
 - For each candidate, calculate "portfolioFitScore" (75 to 98) and write high-quality Hebrew explanations ("portfolioFitReason", "whyMatch", "earningsBeat", "catalyst").
 
@@ -426,9 +512,9 @@ Return ONLY a valid JSON object (no markdown backticks) with this exact schema:
   "query": "${query}",
   "stocks": [
     {
-      "symbol": "string (uppercase US ticker on NASDAQ or NYSE, e.g. NVDA, MSFT, GOOGL)",
+      "symbol": "string (uppercase US ticker on NASDAQ or NYSE, e.g. JNJ, PG, KO, NVDA, MSFT)",
       "name": "string (official company name)",
-      "sector": "string in Hebrew (e.g. טכנולוגיה ותוכנה, שבבים ו-AI, בריאות ורפואה, אנרגיה, צריכה בסיסית)",
+      "sector": "string in Hebrew (e.g. צריכה בסיסית, בריאות ופארמה, תשתיות אנרגיה, טכנולוגיה ותוכנה)",
       "portfolioFitScore": number (75-98),
       "portfolioFitReason": "One Hebrew sentence explaining why it fits or diversifies the client's portfolio.",
       "whyMatch": "Detailed Hebrew explanation (2 sentences) explaining specifically why this company matches the user criteria.",
@@ -451,7 +537,7 @@ CRITICAL: Return 8 candidate stocks in the stocks array so our live Google Finan
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             generationConfig: {
-              temperature: 0.2,
+              temperature: 0.15,
               responseMimeType: 'application/json',
             },
           }),
@@ -480,7 +566,6 @@ CRITICAL: Return 8 candidate stocks in the stocks array so our live Google Finan
       }
 
       if (parsed && Array.isArray(parsed.stocks) && parsed.stocks.length > 0) {
-        // Combine Gemini's candidates with high-upside fallback candidates if minUpside is requested
         const candidatesMap = new Map<string, any>();
         for (const st of parsed.stocks) {
           const sym = (st.symbol || '').toUpperCase().replace(/\.TA$/i, '').trim();
@@ -489,7 +574,24 @@ CRITICAL: Return 8 candidate stocks in the stocks array so our live Google Finan
           }
         }
 
-        if (minUpside && minUpside > 0) {
+        // Inject relevant fallback pool based on client's actual risk profile
+        if (isExplicitConservative) {
+          for (const [sym, meta] of Object.entries(CONSERVATIVE_FALLBACK_METADATA)) {
+            if (!candidatesMap.has(sym)) {
+              candidatesMap.set(sym, {
+                symbol: sym,
+                name: meta.name,
+                sector: meta.sector,
+                portfolioFitScore: 95,
+                portfolioFitReason: meta.portfolioFitReason,
+                whyMatch: meta.whyMatch,
+                earningsBeat: meta.earningsBeat,
+                catalyst: meta.catalyst,
+                isFallbackCandidate: true,
+              });
+            }
+          }
+        } else if (minUpside && minUpside > 0) {
           for (const [sym, meta] of Object.entries(HIGH_UPSIDE_FALLBACK_METADATA)) {
             if (!candidatesMap.has(sym)) {
               candidatesMap.set(sym, {
@@ -530,33 +632,62 @@ CRITICAL: Return 8 candidate stocks in the stocks array so our live Google Finan
         if (validWithGf.length === 0) continue;
 
         // Filter candidates strictly by the user's constraints using the REAL Google Finance numbers!
-        let matching = validWithGf.filter(({ gf }) => {
+        let matching = validWithGf.filter(({ gf, st }) => {
           if (minUpside && minUpside > 0 && gf.upsidePercent < minUpside) return false;
           if (minDividend && minDividend > 0 && gf.dividendYield < minDividend) return false;
           if (filters?.dividend === 'dividendOnly' && gf.dividendYield <= 0) return false;
           if (filters?.budget === 'under50' && gf.currentPrice >= 50) return false;
           if (filters?.budget === '50to150' && (gf.currentPrice < 50 || gf.currentPrice > 150)) return false;
           if (filters?.budget === 'above150' && gf.currentPrice <= 150) return false;
+
+          // If user specifically asked for conservative, exclude high-beta momentum stocks from matching
+          if (isExplicitConservative) {
+            const volatileTickers = ['NVDA', 'PLTR', 'SOFI', 'SNOW', 'DDOG', 'COIN', 'MDB', 'SE', 'MRVL', 'MU', 'VRT'];
+            if (volatileTickers.includes(gf.symbol)) return false;
+          }
           return true;
         });
 
-        // Prefer Gemini's primary candidates first, then fallback candidates
+        // Sort candidates:
+        // 1. Prefer Gemini's tailored primary candidates over generic fallbacks
+        // 2. If conservative: prioritize lower P/E ratio, positive dividends, and portfolio fit score
+        // 3. If minUpside: order by upside percent
         matching.sort((a, b) => {
           const aFb = a.st.isFallbackCandidate ? 1 : 0;
           const bFb = b.st.isFallbackCandidate ? 1 : 0;
           if (aFb !== bFb) return aFb - bFb;
+
+          if (isExplicitConservative) {
+            const aScore = (a.st.portfolioFitScore || 90) + (a.gf.dividendYield > 0 ? 5 : 0);
+            const bScore = (b.st.portfolioFitScore || 90) + (b.gf.dividendYield > 0 ? 5 : 0);
+            return bScore - aScore;
+          }
+
           if (minUpside && minUpside > 0) {
             return b.gf.upsidePercent - a.gf.upsidePercent;
           }
-          return 0;
+          return (b.st.portfolioFitScore || 90) - (a.st.portfolioFitScore || 90);
         });
 
-        // If fewer than 3 matched all strict filters, fill remaining slots with the highest-upside verified Google Finance stocks from validWithGf
+        // If fewer than 3 matched all strict filters, fill remaining slots
         if (matching.length < 3) {
           const chosenSyms = new Set(matching.map((m) => m.gf.symbol));
           const remaining = validWithGf
-            .filter((item) => !chosenSyms.has(item.gf.symbol))
-            .sort((a, b) => b.gf.upsidePercent - a.gf.upsidePercent);
+            .filter((item) => {
+              if (chosenSyms.has(item.gf.symbol)) return false;
+              if (isExplicitConservative) {
+                const volatileTickers = ['NVDA', 'PLTR', 'SOFI', 'SNOW', 'DDOG', 'COIN', 'MDB', 'SE', 'MRVL', 'MU', 'VRT'];
+                if (volatileTickers.includes(item.gf.symbol)) return false;
+              }
+              return true;
+            })
+            .sort((a, b) => {
+              if (isExplicitConservative) {
+                return (b.gf.dividendYield || 0) - (a.gf.dividendYield || 0);
+              }
+              return b.gf.upsidePercent - a.gf.upsidePercent;
+            });
+
           for (const rem of remaining) {
             if (matching.length >= 3) break;
             matching.push(rem);
